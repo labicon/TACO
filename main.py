@@ -19,6 +19,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
+from collections import deque
+
 import networkx as nx 
 import matplotlib.pyplot as plt
 
@@ -106,6 +108,26 @@ class Mapping():
         self.gt_pose = config['tracking']['gt_pose']
         print(f'If agent{self.agent_id} uses gt pose: {self.gt_pose}')
 
+        # EWC parameters
+        self.ewc_enabled = config['training'].get('ewc_enabled', False)
+        if self.ewc_enabled:
+            self.ewc_lambda = config['training']['ewc_lambda']
+            self.fisher_matrix = None
+            self.optimal_params = None
+            print(f"Agent {self.agent_id} has EWC enabled with lambda={self.ewc_lambda}")
+
+        # --- 新增：时序共识 (Incremental UDON) 参数 ---
+        self.temporal_consensus_config = self.config['training'].get('temporal_consensus', {})
+        self.temporal_consensus_enabled = self.temporal_consensus_config.get('enabled', False)
+        if self.temporal_consensus_enabled:
+            self.K = self.temporal_consensus_config.get('K', 1)  # 快照窗口大小
+            # 使用maxlen的deque可以自动维护一个固定大小的滑动窗口
+            # 队列中存储 (参数, 不确定性) 的元组
+            self.temporal_snapshots = deque(maxlen=self.K)
+            print(f"Agent {self.agent_id} has Temporal Consensus enabled with window size K={self.K}.")
+
+        # Replay parameter
+        self.enable_replay = self.config['mapping'].get('enable_replay', True)
 
     def seed_everything(self, seed):
         random.seed(seed)
@@ -113,6 +135,28 @@ class Mapping():
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
+
+        # --- 新增：更新历史快照的方法 ---
+    def update_temporal_snapshot(self):
+        """
+        捕获当前模型状态，并将其作为新的历史快照添加到滑动窗口中。
+        """
+        if not self.temporal_consensus_enabled:
+            return
+        
+        print(f"Agent {self.agent_id}: Capturing new temporal snapshot.")
+        
+        current_params = p2v(self.model.parameters()).clone().detach()
+        current_uncertainty = None
+        if self.track_uncertainty:
+            # 确保不确定性张量存在
+            if not hasattr(self, 'uncertainty_tensor'):
+                 embed_fn_params_vec = p2v(self.model.embed_fn.parameters())
+                 self.uncertainty_tensor = torch.zeros(embed_fn_params_vec.size()).to(self.device)
+            current_uncertainty = self.uncertainty_tensor.clone().detach()
+        
+        self.temporal_snapshots.append((current_params, current_uncertainty))
+    # --- 结束新增 ---
         
         
     def get_pose_representation(self):
@@ -303,6 +347,87 @@ class Mapping():
         
         print(f'Agent {self.agent_id} First frame mapping done')
         return ret, loss
+
+
+    def ewc_loss(self):
+        '''
+        Calculate the EWC regularization loss.
+        '''
+        if self.fisher_matrix is None or self.optimal_params is None:
+            return torch.tensor(0.0).to(self.device)
+        
+        loss = 0.0
+        for name, param in self.model.named_parameters():
+            if name in self.fisher_matrix:
+                fisher = self.fisher_matrix[name]
+                optimal = self.optimal_params[name]
+                loss += (fisher * (param - optimal).pow(2)).sum()
+        
+        return self.ewc_lambda * loss
+
+    def compute_fisher_matrix(self):
+        '''
+        Compute the Fisher Information Matrix for EWC using keyframes in the database.
+        '''
+        self.model.train() # Set model to training mode to get gradients
+        
+        self.fisher_matrix = {name: torch.zeros_like(p) for name, p in self.model.named_parameters() if p.requires_grad}
+        
+        # Use a subset of keyframes to estimate the Fisher matrix
+        num_samples = 0
+        
+        # Sample rays from keyframe database
+        rays, _ = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'] * len(self.keyframeDatabase.frame_ids))
+        
+        if rays.shape[0] == 0:
+            return
+
+        # Process in batches to avoid memory issues
+        batch_size = self.config['mapping']['sample']
+        for i in range(0, rays.shape[0], batch_size):
+            self.map_optimizer.zero_grad()
+            
+            ray_batch = rays[i:i+batch_size]
+            rays_d_cam = ray_batch[..., :3].to(self.device)
+            target_s = ray_batch[..., 3:6].to(self.device)
+            target_d = ray_batch[..., 6:7].to(self.device)
+            
+            # For simplicity, we assume rays are in world coordinates.
+            # This part might need adjustment based on how rays are stored.
+            # Here, assuming rays_o and rays_d are directly available or can be computed.
+            # This is a simplification. In a real scenario, you'd need to get poses.
+            # Let's assume we get rays_o from the keyframe's c2w pose.
+            # This part of the code is complex because it requires poses.
+            # For now, let's use a placeholder logic.
+            
+            # A proper implementation would require sampling poses along with rays.
+            # The current KeyFrameDatabase.sample_global_rays doesn't return poses.
+            # Let's assume we can get the poses.
+            
+            # This is a placeholder. A full implementation would need to fetch poses for the sampled rays.
+            # For now, we will just use the first keyframe's pose as an approximation.
+            if len(self.est_c2w_data) > 0:
+                c2w = next(iter(self.est_c2w_data.values()))
+                rays_o = c2w[None, :3, -1].repeat(ray_batch.shape[0], 1)
+                rays_d = torch.sum(rays_d_cam[..., None, :] * c2w[:3, :3], -1)
+
+                ret = self.model.forward(rays_o, rays_d, target_s, target_d)
+                loss = self.get_loss_from_ret(ret, sdf=False, fs=False) # Focus on RGB-D loss for Fisher
+                loss.backward()
+
+                for name, param in self.model.named_parameters():
+                    if param.grad is not None:
+                        self.fisher_matrix[name] += param.grad.data.pow(2)
+                
+                num_samples += 1
+
+        if num_samples > 0:
+            for name in self.fisher_matrix:
+                self.fisher_matrix[name] /= num_samples
+        
+        self.optimal_params = {name: p.clone().detach() for name, p in self.model.named_parameters() if p.requires_grad}
+        print(f"Agent {self.agent_id}: Fisher matrix and optimal parameters updated.")
+        self.model.zero_grad()
 
 
     def smoothness(self, sample_points=256, voxel_size=0.1, margin=0.05, color=False):
@@ -546,6 +671,32 @@ class Mapping():
             dist_algorithm: algorithm used for multi-agent learning
         '''
 
+        # --- 清理旧的伪邻居（负数ID）的对偶量与邻居项 ---
+        if hasattr(self, 'p_ij'):
+            for k in list(self.p_ij.keys()):
+                if isinstance(k, int) and k < 0:
+                    del self.p_ij[k]
+        # 若 neighbors 里可能残留上轮注入的伪邻居（当通信频率与 BA 频率解耦时）
+        self.neighbors = [
+            n for n in self.neighbors
+            if not (isinstance(n[0], int) and n[0] < 0)
+        ]
+
+        # --- 注入当前窗口的伪邻居，并显式重置 p_ij ---
+        use_temporal_neighbors = False
+        if self.temporal_consensus_enabled and self.temporal_snapshots:
+            tc_inject_every = self.temporal_consensus_config.get('inject_every', 0)
+            if tc_inject_every == 0 or (cur_frame_id % tc_inject_every == 0):
+                use_temporal_neighbors = True
+
+        if use_temporal_neighbors:
+            for i, (snapshot_params, snapshot_uncertainty) in enumerate(self.temporal_snapshots):
+                pseudo_neighbor_id = -(i + 1)  # K=1 时恒为 -1
+                # 显式重置该伪邻居的对偶量，避免沿用旧快照的 p_ij
+                self.p_ij[pseudo_neighbor_id] = torch.zeros_like(snapshot_params)
+                self.neighbors.append([pseudo_neighbor_id, snapshot_params, snapshot_uncertainty])
+        # --- 结束注入 ---
+
         # all the KF poses: 0, 5, 10, ...
         poses = torch.stack([self.est_c2w_data[i] for i in range(0, cur_frame_id, self.config['mapping']['keyframe_every'])])
         poses_fixed = torch.nn.parameter.Parameter(poses).to(self.device)
@@ -571,18 +722,30 @@ class Mapping():
         mean_lag_loss = 0
         mean_aug_loss = 0
         for i in range(self.config['mapping']['iters']):
-
+            
             # Sample rays with real frame ids
             # rays [bs, 7]
             # frame_ids [bs]
-            rays, ids = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'])
+            if self.ewc_enabled or not self.enable_replay:
+                # If EWC is on, or if replay is explicitly disabled, we don't sample from past keyframes.
+                rays, ids = torch.tensor([]), torch.tensor([])
+            else:
+                # Original experience replay logic: only runs if EWC is off AND replay is on.
+                rays, ids = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'])
 
             #TODO: Checkpoint...
-            idx_cur = random.sample(range(0, self.dataset_info['H'] * self.dataset_info['W']),max(self.config['mapping']['sample'] // len(self.keyframeDatabase.frame_ids), self.config['mapping']['min_pixels_cur']))
+            sample_size = self.config['mapping']['sample']
+            if self.enable_replay and not self.ewc_enabled and len(self.keyframeDatabase.frame_ids) > 0:
+                 sample_size = max(self.config['mapping']['sample'] // len(self.keyframeDatabase.frame_ids), self.config['mapping']['min_pixels_cur'])
+
+            idx_cur = random.sample(range(0, self.dataset_info['H'] * self.dataset_info['W']), sample_size)
             current_rays_batch = current_rays[idx_cur, :]
 
             rays = torch.cat([rays, current_rays_batch], dim=0) # N, 7
-            ids_all = torch.cat([ids//self.config['mapping']['keyframe_every'], -torch.ones((len(idx_cur)))]).to(torch.int64)
+            if self.ewc_enabled:
+                ids_all = -torch.ones((len(idx_cur))).to(torch.int64)
+            else:
+                ids_all = torch.cat([ids//self.config['mapping']['keyframe_every'], -torch.ones((len(idx_cur)))]).to(torch.int64)
 
 
             rays_d_cam = rays[..., :3].to(self.device)
@@ -599,9 +762,13 @@ class Mapping():
             self.map_optimizer.zero_grad()
 
             loss = self.get_loss_from_ret(ret, smooth=True)
+                        # Add EWC loss if enabled
+            if self.ewc_enabled:
+                loss += self.ewc_loss()
+
             loss.backward(retain_graph=True)
             mean_obj_loss += loss.item() #item() method extracts the loss’s value as a Python float.
-
+  
             if self.track_uncertainty:
                 if self.config['grid']['enc'] == 'tensor':
                     # For TensorCP, iterate through its parameters to get gradients
@@ -750,6 +917,15 @@ class Mapping():
         if i % self.config['mapping']['keyframe_every'] == 0:
             self.keyframeDatabase.add_keyframe(batch, filter_depth=self.config['mapping']['filter_depth'])
             #print(f'\nAgent {self.agent_id} add keyframe:{i}')
+            if self.ewc_enabled:
+                self.compute_fisher_matrix()
+
+        # --- 新增：周期性地创建历史快照 ---
+        if self.temporal_consensus_enabled:
+            frames_per_task = self.temporal_consensus_config.get('frames_per_task', 500)
+            # 在每个任务结束时（例如第500帧，第1000帧...）更新快照
+            if i > 0 and i % frames_per_task == 0:
+                self.update_temporal_snapshot()
 
         if i % self.config['mesh']['vis']==0:
             self.save_mesh(i, voxel_size=self.config['mesh']['voxel_eval'])
@@ -970,7 +1146,7 @@ def train_multi_agent(cfg):
     print("Closing TensorBoard writers...")
     for i in G.nodes():
         agent_i = G.nodes[i]['agent']
-        agent_i.writer.close()
+        agent_i.writer.close
 
 
 
