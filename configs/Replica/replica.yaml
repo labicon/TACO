@@ -15,8 +15,8 @@ mapping:
   lr_decoder: 0.01         # Learning rate for decoder / 解码器的学习率
   lr_rot: 0.001            # Learning rate for rotation / 旋转的学习率
   lr_trans: 0.001          # Learning rate for translation / 平移的学习率
-  keyframe_every: 5        # Keyframe selection interval / 关键帧选择间隔
-  map_every: 5             # Mapping interval / 映射间隔
+  keyframe_every: 1        # Keyframe selection interval / 关键帧选择间隔
+  map_every: 1             # Mapping interval / 映射间隔
   n_pixels: 0.05           # Number of pixels sampled per mapping / 每次映射采样的像素数
   first_iters: 200         # Iterations for first frame mapping / 第一帧映射的迭代次数
   optim_cur: True          # Whether to optimize current frame / 是否优化当前帧
@@ -76,12 +76,14 @@ training:
   rgb_weight: 5.0         # Weight for RGB loss / RGB损失权重
   depth_weight: 0.1       # Weight for depth loss / 深度损失权重
   sdf_weight: 1000        # Weight for SDF loss / SDF损失权重
-  fs_weight: 10           # Weight for free space loss / 空闲空间损失权重
+  #fs_weight: 10           # Weight for free space loss / 空闲空间损失权重
+  fs_weight: 10
   
   uncert_weight: 0.005    # NARUTO uncert_weight
 
   eikonal_weight: 0       # Weight for Eikonal loss / Eikonal损失权重
-  smooth_weight: 0.000001 # Weight for smoothness loss / 平滑损失权重
+  #smooth_weight: 0.000001 # Weight for smoothness loss / 平滑损失权重
+  smooth_weight: 0
   smooth_pts: 32          # Number of points for smoothness / 平滑点数
   smooth_vox: 0.1         # Smoothness voxel size / 平滑体素大小
   smooth_margin: 0.05     # Margin for smoothness / 平滑边距

@@ -12,6 +12,7 @@ import argparse
 import json
 import copy
 import shutil 
+import psutil
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -144,20 +145,82 @@ class Mapping():
         if not self.temporal_consensus_enabled:
             return
         
-        print(f"Agent {self.agent_id}: Capturing new temporal snapshot.")
+        #print(f"Agent {self.agent_id}: Capturing new temporal snapshot.")
         
         current_params = p2v(self.model.parameters()).clone().detach()
         current_uncertainty = None
         if self.track_uncertainty:
-            # 确保不确定性张量存在
+            """# 确保不确定性张量存在
             if not hasattr(self, 'uncertainty_tensor'):
                  embed_fn_params_vec = p2v(self.model.embed_fn.parameters())
-                 self.uncertainty_tensor = torch.zeros(embed_fn_params_vec.size()).to(self.device)
+                 self.uncertainty_tensor = torch.zeros(embed_fn_params_vec.size()).to(self.device)"""
             current_uncertainty = self.uncertainty_tensor.clone().detach()
         
         self.temporal_snapshots.append((current_params, current_uncertainty))
     # --- 结束新增 ---
+
+    def extra_persistent_mem_bytes(self):
+        """估算‘额外持久存储’的运行期占用（不含模型本体/激活/缓存池）"""
+        bpe = 4  # 以 fp32 计
+        bytes_uncert = int(self.uncertainty_tensor.numel()) * bpe if hasattr(self, 'uncertainty_tensor') else 0
+        bytes_Wi = int(self.W_i.numel()) * bpe if hasattr(self, 'W_i') else 0
+
+        # 时序快照（K<=1 时至多一份）
+        bytes_snapshot = 0
+        if getattr(self, 'temporal_consensus_enabled', False) and hasattr(self, 'temporal_snapshots') and len(self.temporal_snapshots) > 0:
+            snap_params, snap_uncert = self.temporal_snapshots[-1]
+            bytes_snapshot += int(snap_params.numel()) * bpe
+            if snap_uncert is not None:
+                bytes_snapshot += int(snap_uncert.numel()) * bpe
+
+        # 伪邻居对偶变量（负数ID），存在则计入（大小≈|theta|）
+        bytes_dual_pseudo = 0
+        if hasattr(self, 'p_ij'):
+            for k, v in self.p_ij.items():
+                if isinstance(k, int) and k < 0 and hasattr(v, 'numel'):
+                    bytes_dual_pseudo += int(v.numel()) * bpe
+
+        # 关键帧重放：关闭则为 0
+        bytes_replay = 0
+
+        # 常驻教师网络：当前无单独教师副本
+        bytes_teacher = 0
+
+        total = bytes_uncert + bytes_Wi + bytes_snapshot + bytes_dual_pseudo + bytes_replay + bytes_teacher
+        return {
+            'total': total,
+            'uncertainty_tensor': bytes_uncert,
+            'W_i': bytes_Wi,
+            'temporal_snapshot': bytes_snapshot,
+            'dual_pseudo': bytes_dual_pseudo,
+            'replay': bytes_replay,
+            'teacher': bytes_teacher,
+        }
         
+    def log_extra_persistent_mem(self, step: int):
+        info = self.extra_persistent_mem_bytes()
+        to_mb = lambda b: b / (1024**2)
+        # 打印
+        print(f"[ExtraPersistentMem] step={step} | total={to_mb(info['total']):.2f} MB "
+              f"(uncert={to_mb(info['uncertainty_tensor']):.2f}, Wi={to_mb(info['W_i']):.2f}, "
+              f"snapshot={to_mb(info['temporal_snapshot']):.2f}, dual_pseudo={to_mb(info['dual_pseudo']):.2f}, "
+              f"replay={to_mb(info['replay']):.2f}, teacher={to_mb(info['teacher']):.2f})")
+        # 写入 TensorBoard
+        self.writer.add_scalar('ExtraMem/Total_MB', to_mb(info['total']), step)
+        for k in ['uncertainty_tensor','W_i','temporal_snapshot','dual_pseudo','replay','teacher']:
+            self.writer.add_scalar(f'ExtraMem/{k}_MB', to_mb(info[k]), step)
+        # 追加到文件
+        out_dir = os.path.join(self.config['data']['output'], self.config['data']['exp_name'], f'agent_{self.agent_id}')
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, 'extra_persistent_mem.csv')
+        if not os.path.exists(path):
+            with open(path, 'w') as f:
+                f.write('step,total_mb,uncertainty_mb,Wi_mb,snapshot_mb,dual_pseudo_mb,replay_mb,teacher_mb\n')
+        with open(path, 'a') as f:
+            f.write(f"{step},{to_mb(info['total']):.2f},{to_mb(info['uncertainty_tensor']):.2f},"
+                    f"{to_mb(info['W_i']):.2f},{to_mb(info['temporal_snapshot']):.2f},"
+                    f"{to_mb(info['dual_pseudo']):.2f},{to_mb(info['replay']):.2f},{to_mb(info['teacher']):.2f}\n")
+
         
     def get_pose_representation(self):
         '''
@@ -175,6 +238,38 @@ class Mapping():
         else:
             raise NotImplementedError
         
+
+    def log_memory(self, step: int):
+        # 记录 CPU 内存（RSS）
+        process = psutil.Process(os.getpid())
+        rss_mb = process.memory_info().rss / (1024**2)
+        self.writer.add_scalar('Memory/CPU_RSS_MB', rss_mb, step)
+
+        # 记录 GPU 显存（本进程）
+        alloc_mb = reserved_mb = max_alloc_mb = 0.0
+        if torch.cuda.is_available():
+            dev = self.device
+            try:
+                torch.cuda.synchronize(dev)
+            except Exception:
+                pass
+            alloc_mb = torch.cuda.memory_allocated(dev) / (1024**2)
+            reserved_mb = torch.cuda.memory_reserved(dev) / (1024**2)
+            max_alloc_mb = torch.cuda.max_memory_allocated(dev) / (1024**2)
+            self.writer.add_scalar('Memory/GPU_Allocated_MB', alloc_mb, step)
+            self.writer.add_scalar('Memory/GPU_Reserved_MB', reserved_mb, step)
+            self.writer.add_scalar('Memory/GPU_MaxAllocated_MB', max_alloc_mb, step)
+
+        # 追加到 CSV（每个 agent 各一份）
+        out_dir = os.path.join(self.config['data']['output'], self.config['data']['exp_name'], f'agent_{self.agent_id}')
+        os.makedirs(out_dir, exist_ok=True)
+        csv_path = os.path.join(out_dir, 'mem_usage.csv')
+        header_needed = not os.path.exists(csv_path)
+        with open(csv_path, 'a') as f:
+            if header_needed:
+                f.write('step,cpu_rss_mb,gpu_alloc_mb,gpu_reserved_mb,gpu_max_alloc_mb\n')
+            f.write(f'{step},{rss_mb:.2f},{alloc_mb:.2f},{reserved_mb:.2f},{max_alloc_mb:.2f}\n')
+
 
     def create_pose_data(self):
         '''
@@ -199,13 +294,20 @@ class Mapping():
         num_kf = int(self.dataset_info['num_frames'] // self.config['mapping']['keyframe_every'] + 1)  
         print('#kf:', num_kf)
         print('#Pixels to save:', self.dataset_info['num_rays_to_save'])
-        return KeyFrameDatabase(config, 
-                                self.dataset_info['H'], 
-                                self.dataset_info['W'], 
-                                num_kf, 
-                                self.dataset_info['num_rays_to_save'], 
-                                self.device)
- 
+
+        # 关键：关闭 replay 时，KF 数据库存到 CPU，且不预留射线缓冲
+        use_replay = self.config['mapping'].get('enable_replay', True)
+        dev = self.device if use_replay else torch.device('cpu')
+        rays_to_save = self.dataset_info['num_rays_to_save'] if use_replay else 0
+
+        return KeyFrameDatabase(
+            config,
+            self.dataset_info['H'],
+            self.dataset_info['W'],
+            num_kf,
+            rays_to_save,
+            dev
+        )
 
     def save_state_dict(self, save_path):
         torch.save(self.model.state_dict(), save_path)
@@ -456,6 +558,15 @@ class Mapping():
 
         return loss
     
+
+    def get_gamma_t(self, t: int) -> float:
+        """
+        时序共识折扣系数 γ_t，默认常数；如需调度可在此实现 schedule。
+        t 可以用 cur_frame_id 或内层迭代 i。
+        """
+        if not self.temporal_consensus_enabled:
+            return 1.0
+        return float(self.temporal_consensus_config.get('gamma', 1.0))
     
     def scaling_AUQ_CADMM(self, k, uncertainty_i, uncertainty_j):
         uncertainty = uncertainty_i + uncertainty_j
@@ -517,17 +628,24 @@ class Mapping():
                 uncertainty_j = neighbor[2]
                 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
-                W_i = p*uncertainty_i + q
-                W_i = torch.nn.functional.pad(W_i, (0,padding_size), "constant", self.rho) 
+               # 非对称：伪邻居（负数 ID）时对 W_i 乘以 gamma_t
+                gamma_t = 1.0
+                if isinstance(neighbor_id, int) and neighbor_id < 0:
+                    gamma_t = self.get_gamma_t(k)
+
+                W_i = gamma_t * (p*uncertainty_i + q)
+                W_i = torch.nn.functional.pad(W_i, (0, padding_size), "constant", self.rho)
                 W_j = p*uncertainty_j + q
-                W_j = torch.nn.functional.pad(W_j, (0,padding_size), "constant", self.rho)
-                
+                W_j = torch.nn.functional.pad(W_j, (0, padding_size), "constant", self.rho)
+
                 denominator = W_i + W_j
                 epsilon = 1e-8
-                update_term = 2*W_i * torch.div( W_j*theta_i_k - W_j*theta_j_k, denominator + epsilon)
-                
+                update_term = 2*W_i * torch.div(W_j*theta_i_k - W_j*theta_j_k, denominator + epsilon)
+
                 # Update the specific dual variable for this neighbor
                 self.p_ij[neighbor_id] += update_term
+
+
         else:
             for neighbor in self.neighbors:
                 theta_j_k = neighbor[0]
@@ -575,10 +693,14 @@ class Mapping():
                 lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id])
 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
-                W_i = p*uncertainty_i + q
-                W_i = torch.nn.functional.pad(W_i, (0,padding_size), "constant", self.rho) 
+                gamma_t = 1.0
+                if isinstance(neighbor_id, int) and neighbor_id < 0:
+                    gamma_t = self.get_gamma_t(k)
+
+                W_i = gamma_t * (p*uncertainty_i + q)
+                W_i = torch.nn.functional.pad(W_i, (0, padding_size), "constant", self.rho)
                 W_j = p*uncertainty_j + q
-                W_j = torch.nn.functional.pad(W_j, (0,padding_size), "constant", self.rho) 
+                W_j = torch.nn.functional.pad(W_j, (0, padding_size), "constant", self.rho)
                 
                 denominator = W_i + W_j
                 epsilon = 1e-8
@@ -915,7 +1037,8 @@ class Mapping():
             
         # Add keyframe
         if i % self.config['mapping']['keyframe_every'] == 0:
-            self.keyframeDatabase.add_keyframe(batch, filter_depth=self.config['mapping']['filter_depth'])
+            if self.config['mapping'].get('enable_replay', True):
+                self.keyframeDatabase.add_keyframe(batch, filter_depth=self.config['mapping']['filter_depth'])
             #print(f'\nAgent {self.agent_id} add keyframe:{i}')
             if self.ewc_enabled:
                 self.compute_fisher_matrix()
@@ -935,6 +1058,12 @@ class Mapping():
             model_savepath = os.path.join(self.config['data']['output'], self.config['data']['exp_name'], f'agent_{self.agent_id}', 'checkpoint{}.pt'.format(i)) 
             self.save_ckpt(model_savepath)
             self.save_mesh(i, voxel_size=self.config['mesh']['voxel_final'])
+
+        # 按频率记录内存（默认每步，也可在配置中改小频率）
+        log_every = self.config['mapping'].get('mem_log_every', 1)
+        if (i % log_every) == 0:
+            self.log_memory(i)
+            self.log_extra_persistent_mem(i)
         
 
 def create_agent_graph(cfg, dataset):
@@ -1146,7 +1275,7 @@ def train_multi_agent(cfg):
     print("Closing TensorBoard writers...")
     for i in G.nodes():
         agent_i = G.nodes[i]['agent']
-        agent_i.writer.close
+        agent_i.writer.close()
 
 
 

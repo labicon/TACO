@@ -3,7 +3,9 @@ mapping:
   bound: [[-0.1,8.6],[-0.1,8.9],[-0.3,3.3]]
   marching_cubes_bound: [[-0.1,8.6],[-0.1,8.9],[-0.3,3.3]]
   keyframe_every: 1
+  map_every: 1
   enable_replay: False
+  mem_log_every: 20
   
 
 mesh: 
@@ -14,10 +16,11 @@ training:
   ewc_enabled: False
   ewc_lambda: 0.1
   temporal_consensus:
-    enabled: True
+    enabled: False
     K: 1
-    frames_per_task: 500
-    inject_every: 100
+    frames_per_task: 1
+    inject_every: 1
+    gamma: 1   
 
 
 grid:
@@ -28,7 +31,7 @@ data:
   datadir: data/scannet/scene0000_00
   trainskip: 1
   output: output/scannet/scene0000_00
-  exp_name: Incremental
+  exp_name: None_test
   load_path: fixed_decoder.pt
 
 tracking:
