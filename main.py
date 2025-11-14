@@ -120,6 +120,7 @@ class Mapping():
         # --- 新增：时序共识 (Incremental UDON) 参数 ---
         self.temporal_consensus_config = self.config['training'].get('temporal_consensus', {})
         self.temporal_consensus_enabled = self.temporal_consensus_config.get('enabled', False)
+        self.uncert_decay = self.temporal_consensus_config.get('uncertainty_decay', 0.99)
         if self.temporal_consensus_enabled:
             self.K = self.temporal_consensus_config.get('K', 1)  # 快照窗口大小
             # 使用maxlen的deque可以自动维护一个固定大小的滑动窗口
@@ -201,10 +202,10 @@ class Mapping():
         info = self.extra_persistent_mem_bytes()
         to_mb = lambda b: b / (1024**2)
         # 打印
-        print(f"[ExtraPersistentMem] step={step} | total={to_mb(info['total']):.2f} MB "
-              f"(uncert={to_mb(info['uncertainty_tensor']):.2f}, Wi={to_mb(info['W_i']):.2f}, "
-              f"snapshot={to_mb(info['temporal_snapshot']):.2f}, dual_pseudo={to_mb(info['dual_pseudo']):.2f}, "
-              f"replay={to_mb(info['replay']):.2f}, teacher={to_mb(info['teacher']):.2f})")
+        # print(f"[ExtraPersistentMem] step={step} | total={to_mb(info['total']):.2f} MB "
+        #       f"(uncert={to_mb(info['uncertainty_tensor']):.2f}, Wi={to_mb(info['W_i']):.2f}, "
+        #       f"snapshot={to_mb(info['temporal_snapshot']):.2f}, dual_pseudo={to_mb(info['dual_pseudo']):.2f}, "
+        #       f"replay={to_mb(info['replay']):.2f}, teacher={to_mb(info['teacher']):.2f})")
         # 写入 TensorBoard
         self.writer.add_scalar('ExtraMem/Total_MB', to_mb(info['total']), step)
         for k in ['uncertainty_tensor','W_i','temporal_snapshot','dual_pseudo','replay','teacher']:
@@ -437,6 +438,7 @@ class Mapping():
                 
                 if grid_grad is not None and grid_grad.numel() > 0:
                     grid_has_grad = (torch.abs(grid_grad) > 0).to(torch.int32)
+                    self.uncertainty_tensor *= self.uncert_decay
                     self.uncertainty_tensor += grid_has_grad
 
 
@@ -596,9 +598,15 @@ class Mapping():
                 self.neighbors.append( [theta_j, uncertainty_j] )
 
         elif self.dist_algorithm in ('CADMM', 'MACIM'):
-            model_j = input[0]  
-            theta_j = p2v(model_j.parameters()).detach()
-            self.neighbors.append( [theta_j] )
+            if self.config['edge_based']:
+                neighbor_id = input[0]
+                model_j = input[1]
+                theta_j = p2v(model_j.parameters()).detach()
+                self.neighbors.append( [neighbor_id, theta_j] )
+            else:
+                model_j = input[0]  
+                theta_j = p2v(model_j.parameters()).detach()
+                self.neighbors.append( [theta_j] )
 
         elif self.dist_algorithm == 'DSGD':
             model_j = input[0]  
@@ -614,9 +622,17 @@ class Mapping():
             self.neighbors.append( [model_j.parameters(), y_dsgt_j, j] )
 
     def dual_update(self, theta_i_k):
-        for neighbor in self.neighbors:
-            theta_j_k = neighbor[0]
-            self.p_i += self.rho * (theta_i_k - theta_j_k)    
+        if self.config['edge_based']:
+            for neighbor in self.neighbors:
+                neighbor_id = neighbor[0]
+                theta_j_k = neighbor[1]
+                # 确保 p_ij 中有该邻居的条目
+                if neighbor_id in self.p_ij:
+                    self.p_ij[neighbor_id] += self.rho * (theta_i_k - theta_j_k)
+        else:
+            for neighbor in self.neighbors:
+                theta_j_k = neighbor[0]
+                self.p_i += self.rho * (theta_i_k - theta_j_k)    
 
 
     def dual_update_AUQ_CADMM(self, theta_i_k, uncertainty_i, k):
@@ -665,13 +681,24 @@ class Mapping():
 
     def primal_update(self, theta_i_k, loss):
         theta_i = p2v(self.model.parameters())
-        lag_loss = torch.dot(theta_i, self.p_i) #TODO: uncomment? comment?
-        aug_loss = torch.tensor(0, dtype=torch.float64).to(self.device)
-        for neighbor in self.neighbors:
-            theta_j_k = neighbor[0]
-            aug_loss += self.rho * torch.norm(theta_i - (theta_i_k+theta_j_k)/2)**2
-        loss += lag_loss + aug_loss 
-        return loss, lag_loss.item(), aug_loss.item()
+        if self.config['edge_based']:
+            lag_loss = torch.tensor(0, dtype=torch.float64).to(self.device)
+            aug_loss = torch.tensor(0, dtype=torch.float64).to(self.device)
+            for neighbor in self.neighbors:
+                neighbor_id = neighbor[0]
+                theta_j_k = neighbor[1]
+                if neighbor_id in self.p_ij:
+                    lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id])
+                    aug_loss += self.rho * torch.norm(theta_i - (theta_i_k + theta_j_k) / 2)**2
+        else:
+            lag_loss = torch.dot(theta_i, self.p_i)
+            aug_loss = torch.tensor(0, dtype=torch.float64).to(self.device)
+            for neighbor in self.neighbors:
+                theta_j_k = neighbor[0]
+                aug_loss += self.rho * torch.norm(theta_i - (theta_i_k+theta_j_k)/2)**2
+
+        total_loss = loss + lag_loss + aug_loss 
+        return total_loss, lag_loss.item(), aug_loss.item()
     
 
     def primal_update_AUQ_CADMM(self, theta_i_k, loss, uncertainty_i, k):
@@ -805,19 +832,29 @@ class Mapping():
         ]
 
         # --- 注入当前窗口的伪邻居，并显式重置 p_ij ---
-        use_temporal_neighbors = False
+        inject_this_frame = False
         if self.temporal_consensus_enabled and self.temporal_snapshots:
             tc_inject_every = self.temporal_consensus_config.get('inject_every', 0)
             if tc_inject_every == 0 or (cur_frame_id % tc_inject_every == 0):
-                use_temporal_neighbors = True
+                inject_this_frame = True
 
-        if use_temporal_neighbors:
-            for i, (snapshot_params, snapshot_uncertainty) in enumerate(self.temporal_snapshots):
-                pseudo_neighbor_id = -(i + 1)  # K=1 时恒为 -1
-                # 显式重置该伪邻居的对偶量，避免沿用旧快照的 p_ij
-                self.p_ij[pseudo_neighbor_id] = torch.zeros_like(snapshot_params)
+        if inject_this_frame:
+            for i, (snapshot_params_cpu, snapshot_uncertainty_cpu) in enumerate(self.temporal_snapshots):
+                pseudo_neighbor_id = -(i + 1)
+                snapshot_params = snapshot_params_cpu.to(self.device)
+                
+                # 根据算法模式决定是否传递不确定性
+                snapshot_uncertainty = None
+                if dist_algorithm == 'AUQ_CADMM' and snapshot_uncertainty_cpu is not None:
+                    snapshot_uncertainty = snapshot_uncertainty_cpu.to(self.device)
+
+                # 初始化对偶变量并添加到邻居列表
+                if self.config['edge_based']:
+                    self.p_ij[pseudo_neighbor_id] = torch.zeros_like(snapshot_params)
+                
+                # CADMM 路径下，uncertainty 为 None
                 self.neighbors.append([pseudo_neighbor_id, snapshot_params, snapshot_uncertainty])
-        # --- 结束注入 ---
+
 
         # all the KF poses: 0, 5, 10, ...
         poses = torch.stack([self.est_c2w_data[i] for i in range(0, cur_frame_id, self.config['mapping']['keyframe_every'])])

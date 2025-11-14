@@ -76,11 +76,9 @@ training:
   rgb_weight: 5.0
   depth_weight: 0.1
   sdf_weight: 1000
-  #fs_weight: 10
   fs_weight: 10
   eikonal_weight: 0
-  #smooth_weight: 0.001 #0.001
-  smooth_weight: 0.0
+  smooth_weight: 0.001 #0.001
   smooth_pts: 64
   smooth_vox: 0.1
   smooth_margin: 0.05
