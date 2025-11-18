@@ -14,8 +14,33 @@ mesh:
 
 
 training:
+
   ewc_enabled: False
   ewc_lambda: 0.1
+
+  mas_enabled: True
+  mas:
+    lambda: 0.1           # MAS 正则系数 λ
+    frames_per_task: 100  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
+
+
+  kr_enabled: False 
+  kr:
+    K: 10 # 保留的关键帧个数
+    num_replay_rays: 256 # 每次 BA 从这 K 个 KF 总共采样多少条射线
+
+  cnm_enabled: False
+  cnm:
+    frames_per_task: 500
+    buffer_size: 20000        # 经验回放 buffer 大小
+    num_samples_per_teacher: 20000    # 每次 teacher 更新时生成的伪样本数
+    num_offsurface_samples: 256      # 每次 BA 取多少伪样本
+    offsurface_weight: 0.1           # 整体 CNM loss 权重，建议先小一点
+    alpha: 12.0                        # ψ_s 中的 α
+    near_threshold: 0.05              # |sdf_old| < 0.05 视为 near-surface
+    value_weight_near: 1.0            # near 区域 value consistency 权重
+    value_weight_far: 0.1             # far 区域 value consistency 权重
+
   temporal_consensus:
     enabled: False
     K: 1
@@ -27,7 +52,7 @@ data:
   datadir: data/Replica/room1
   trainskip: 1
   output: output/Replica/room1
-  exp_name: None_test3
+  exp_name: MAS
   load_path: fixed_decoder.pt
 
 

@@ -34,6 +34,9 @@ from datasets.dataset import get_dataset
 from utils import coordinates, extract_mesh, colormap_image
 from tools.eval_ate import pose_evaluation
 from optimization.utils import at_to_transform_matrix, qt_to_transform_matrix, matrix_to_axis_angle, matrix_to_quaternion
+from baselines.CNM import CNMTeacher, CNMOffsurfaceReplay
+from baselines.KR import KRKeyframeReplay
+from baselines.MAS import MAS
 
 import sys
 
@@ -127,6 +130,44 @@ class Mapping():
             # 队列中存储 (参数, 不确定性) 的元组
             self.temporal_snapshots = deque(maxlen=self.K)
             print(f"Agent {self.agent_id} has Temporal Consensus enabled with window size K={self.K}.")
+
+
+        # --- CNM: Continual Neural Mapping 基线 ---
+        self.cnm_enabled = self.config['training'].get('cnm_enabled', False)
+        if self.cnm_enabled:
+            cnm_cfg = self.config['training'].get('cnm', {})
+            # 初始化 teacher
+            self.cnm_teacher = CNMTeacher(self)
+            # 初始化 CNM 自己的 function replay buffer
+            from baselines.CNM import CNMReplayBuffer  # 也可以在文件头一起 import
+            buffer_size = cnm_cfg.get('buffer_size', 200000)
+            batch_size = cnm_cfg.get('num_offsurface_samples', 2048)
+            self.cnm_buffer = CNMReplayBuffer(
+                device=self.device,
+                max_points=buffer_size,
+                sample_batch_size=batch_size,
+            )
+            # 初始化 off-surface replay 控制器
+            self.cnm_replay = CNMOffsurfaceReplay(self, self.cnm_buffer)
+            print(f"Agent {self.agent_id} has CNM enabled.")
+
+        # --- KR: Keyframe Replay baseline (replay last K keyframes) ---
+        self.kr_enabled = self.config['training'].get('kr_enabled', False)
+        if self.kr_enabled:
+            kr_cfg = self.config['training'].get('kr', {})
+            kr_K = kr_cfg.get('K', 10)
+            self.kr_replay = KRKeyframeReplay(self, K=kr_K)
+            print(f"Agent {self.agent_id} has KR enabled with K={kr_K}.")
+
+        # --- MAS: Memory Aware Synapses baseline ---
+        self.mas_enabled = self.config['training'].get('mas_enabled', False)
+        if self.mas_enabled:
+            mas_cfg = self.config['training'].get('mas', {})
+            mas_lambda = mas_cfg.get('lambda', 1.0)
+            self.mas = MAS(self, lam=mas_lambda)
+            print(f"Agent {self.agent_id} has MAS enabled with lambda={mas_lambda}.")
+
+
 
         # Replay parameter
         self.enable_replay = self.config['mapping'].get('enable_replay', True)
@@ -885,8 +926,9 @@ class Mapping():
             # Sample rays with real frame ids
             # rays [bs, 7]
             # frame_ids [bs]
-            if self.ewc_enabled or not self.enable_replay:
-                # If EWC is on, or if replay is explicitly disabled, we don't sample from past keyframes.
+            """
+            if not self.enable_replay:
+                # If replay is explicitly disabled, we don't sample from past keyframes.
                 rays, ids = torch.tensor([]), torch.tensor([])
             else:
                 # Original experience replay logic: only runs if EWC is off AND replay is on.
@@ -905,7 +947,48 @@ class Mapping():
                 ids_all = -torch.ones((len(idx_cur))).to(torch.int64)
             else:
                 ids_all = torch.cat([ids//self.config['mapping']['keyframe_every'], -torch.ones((len(idx_cur)))]).to(torch.int64)
+            """
+            rays_list = []
+            ids_pose_list = []
 
+            # 1) 先看 KR：如果 kr_enabled=True，则只用 KR-replay（不走原 replay）
+            if getattr(self, 'kr_enabled', False) and len(self.keyframeDatabase.frame_ids) > 0:
+                kr_cfg = self.config['training'].get('kr', {})
+                num_replay_rays = kr_cfg.get('num_replay_rays', self.config['mapping']['sample'])
+                rays_kr, ids_pose_kr = self.kr_replay.sample_replay_rays(num_replay_rays)
+                if rays_kr.shape[0] > 0:
+                    rays_list.append(rays_kr)
+                    ids_pose_list.append(ids_pose_kr.to(torch.int64))
+
+            # 2) 如果没开 KR，但 enable_replay=True，则走原来的 global replay
+            elif self.enable_replay and len(self.keyframeDatabase.frame_ids) > 0:
+                rays_rep, ids_rep = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'])
+                if rays_rep.shape[0] > 0:
+                    rays_list.append(rays_rep)
+                    ids_pose_list.append((ids_rep // self.config['mapping']['keyframe_every']).to(torch.int64))
+
+            # 3) 当前帧采样 pixels（无论是否有 replay，都要有当前帧）
+            sample_size = self.config['mapping']['sample']
+            if self.enable_replay and not self.ewc_enabled and len(self.keyframeDatabase.frame_ids) > 0:
+                sample_size = max(
+                    self.config['mapping']['sample'] // max(len(self.keyframeDatabase.frame_ids), 1),
+                    self.config['mapping']['min_pixels_cur']
+                )
+
+            idx_cur = random.sample(
+                range(0, self.dataset_info['H'] * self.dataset_info['W']),
+                sample_size
+            )
+            idx_cur = torch.tensor(idx_cur, dtype=torch.long)
+            current_rays_batch = current_rays[idx_cur, :]  # [Nc,7]
+
+            rays_list.append(current_rays_batch)
+            ids_cur = -torch.ones((current_rays_batch.shape[0],), dtype=torch.int64)
+            ids_pose_list.append(ids_cur)
+
+            # 拼接所有 rays（至少包含当前帧）
+            rays = torch.cat(rays_list, dim=0)  # [N,7]
+            ids_all = torch.cat(ids_pose_list, dim=0)  # [N]
 
             rays_d_cam = rays[..., :3].to(self.device)
             target_s = rays[..., 3:6].to(self.device)
@@ -920,10 +1003,30 @@ class Mapping():
 
             self.map_optimizer.zero_grad()
 
+            
+
+            # 先反传一次，用当前任务的梯度来估 MAS 重要性
+            if getattr(self, 'mas_enabled', False):
+                # 暂时不加正则，只用当前任务 loss 计算梯度敏感度
+                loss = self.get_loss_from_ret(ret, smooth=True)
+                loss.backward(retain_graph=True)
+                self.mas.accumulate_importance_from_grad()
+                self.map_optimizer.zero_grad()  # 清掉刚才那次 backward 的 grad，下面重新算总 loss
+
             loss = self.get_loss_from_ret(ret, smooth=True)
-                        # Add EWC loss if enabled
+
+            # Add EWC loss if enabled
             if self.ewc_enabled:
                 loss += self.ewc_loss()
+
+            # --- CNM: off-surface function replay loss ---
+            if getattr(self, 'cnm_enabled', False):
+                # 从 CNM 专用 buffer 取一批 (x, sdf_teacher)，对当前模型加符号 & 数值一致性约束
+                loss += self.cnm_replay.compute_loss(self.cnm_teacher)
+
+            # --- MAS loss: parameter importance regularization ---
+            if getattr(self, 'mas_enabled', False):
+                loss += self.mas.mas_loss()
 
             loss.backward(retain_graph=True)
             mean_obj_loss += loss.item() #item() method extracts the loss’s value as a Python float.
@@ -1076,9 +1179,23 @@ class Mapping():
         if i % self.config['mapping']['keyframe_every'] == 0:
             if self.config['mapping'].get('enable_replay', True):
                 self.keyframeDatabase.add_keyframe(batch, filter_depth=self.config['mapping']['filter_depth'])
+                if getattr(self, 'kr_enabled', False):
+                    self.kr_replay.register_keyframe(i)
             #print(f'\nAgent {self.agent_id} add keyframe:{i}')
             if self.ewc_enabled:
                 self.compute_fisher_matrix()
+
+
+         # --- CNM: 在任务边界更新 teacher 并填充 CNM buffer ---
+        if getattr(self, 'cnm_enabled', False):
+            cnm_cfg = self.config['training'].get('cnm', {})
+            frames_per_task_cnm = cnm_cfg.get('frames_per_task', 500)
+            # 在每个“任务结束”处更新 CNM teacher，并根据 teacher 生成伪样本填入 buffer
+            if i > 0 and (i % frames_per_task_cnm) == 0:
+                # 1) 冻结当前模型为 teacher（θ^{t-1}）
+                self.cnm_teacher.update()
+                # 2) 用 teacher 在 bbox 内生成一大批 (x, sdf_teacher)，写入 CNM buffer
+                self.cnm_replay.populate_buffer_from_teacher(self.cnm_teacher)
 
         # --- 新增：周期性地创建历史快照 ---
         if self.temporal_consensus_enabled:
@@ -1086,6 +1203,14 @@ class Mapping():
             # 在每个任务结束时（例如第500帧，第1000帧...）更新快照
             if i > 0 and i % frames_per_task == 0:
                 self.update_temporal_snapshot()
+
+        # --- MAS: 在任务边界归一化重要性 Ω_{ij} 并更新 θ* ---
+        if getattr(self, 'mas_enabled', False):
+            mas_cfg = self.config['training'].get('mas', {})
+            frames_per_task_mas = mas_cfg.get('frames_per_task', 500)
+            if i > 0 and (i % frames_per_task_mas) == 0:
+                print(f"Agent {self.agent_id}: MAS finalize importance at frame {i}")
+                self.mas.finalize_importance()
 
         if i % self.config['mesh']['vis']==0:
             self.save_mesh(i, voxel_size=self.config['mesh']['voxel_eval'])

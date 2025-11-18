@@ -15,7 +15,7 @@
 
 ### Replica Room1 Evaluation
 
-| Metric                |Incremental-gamma1-inject100-frames_per_task100|Incremental-gamma1-inject1-frames_per_task1|Incremental-gamma1-inject1-frames_per_task1_trainskip20|Incremental-gamma1-inject1-frames_per_task1_trainskip20_iter100|Incremental-gamma1-inject1-frames_per_task1_trainskip20_iter1000| Incremental-gamma1-inject1-frames_per_task1_trainskip20_iter2000| Normal |Normal_trainskip20 |Normal_trainskip20_iter100 |
+| Metric |Incremental-gamma1-inject100-frames_per_task100|Incremental-gamma1-inject1-frames_per_task1|Incremental-gamma1-inject1-frames_per_task1_trainskip20|Incremental-gamma1-inject1-frames_per_task1_trainskip20_iter100|Incremental-gamma1-inject1-frames_per_task1_trainskip20_iter1000| Incremental-gamma1-inject1-frames_per_task1_trainskip20_iter2000| Normal |Normal_trainskip20 |Normal_trainskip20_iter100 |
 |------------------------|-------|-------|-------|-------|-------|-------|--------|--------|--------|
 | **Accuracy**           | 7.60  | 4.94|5.52|8.22|9.00|10.59| 2.29|6.61|2.11|
 | **Completion**         | 2.02  |2.02 |2.10|2.17|2.32|2.42|1.84 |1.99|1.85|
@@ -134,7 +134,7 @@ Normal: 3985.09 MB
 Dropped 55.84%
 
 
-scannet scene0000
+On Scannet scene0000
 
 Co-SLAM*
 accuracy: 2.22
@@ -144,7 +144,7 @@ CD: 2.40
 precision@5cm: 95.16
 F1@5cm: 95.29
 
-Co-SLAM
+Co-SLAM(None)
 accuracy: 29.73
 completion: 27.29
 completion ratio: 44.42
@@ -167,6 +167,25 @@ completion ratio: 87.31
 CD: 5.60
 precision@5cm: 80.20
 F1@5cm: 83.60
+
+CNM
+accuracy: 31.00
+completion: 22.90
+completion ratio: 27.44
+CD: 26.95
+precision@5cm: 19.97
+F1@5cm: 23.11
+
+accuracy: 32.74
+completion: 15.06
+completion ratio: 29.57
+CD: 23.90
+precision@5cm: 17.52
+F1@5cm: 22.00
+
+
+
+
 
 
 room1 
@@ -271,3 +290,66 @@ CD: 1.76
 precision@5cm: 94.47
 F1@5cm: 95.05
 
+MAS
+accuracy: 3.42
+completion: 1.78
+completion ratio: 95.01
+CD: 2.60
+precision@5cm: 89.20
+F1@5cm: 92.01
+
+KR
+accuracy: 8.97
+completion: 2.16
+completion ratio: 93.28
+CD: 5.56
+precision@5cm: 79.44
+F1@5cm: 85.81
+
+CNM(alpha12_weight0.1_20k)
+accuracy: 6.29
+completion: 2.17
+completion ratio: 92.82
+CD: 4.23
+precision@5cm: 80.83
+F1@5cm: 86.41
+
+None
+accuracy: 39.78
+completion: 9.55
+completion ratio: 58.17
+CD: 24.67
+precision@5cm: 28.51
+F1@5cm: 38.27
+
+Full_CNM_alpha12_weight0.02_200k
+accuracy: 6.11
+completion: 2.43
+completion ratio: 91.17
+CD: 4.27
+precision@5cm: 78.30
+F1@5cm: 84.24
+
+Full_CNM_alpha14_weight0.1_20k
+accuracy: 6.29
+completion: 2.17
+completion ratio: 92.82
+CD: 4.23
+precision@5cm: 80.83
+F1@5cm: 86.41
+
+Full_CNM_alpha12_weight0.02_20k
+accuracy: 5.15
+completion: 2.25
+completion ratio: 92.22
+CD: 3.70
+precision@5cm: 81.21
+F1@5cm: 86.37
+
+Full_CNM_alpha14_weight0.02_20k
+accuracy: 5.74
+completion: 2.40
+completion ratio: 90.75
+CD: 4.07
+precision@5cm: 79.19
+F1@5cm: 84.58

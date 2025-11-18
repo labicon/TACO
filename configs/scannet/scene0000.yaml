@@ -15,8 +15,34 @@ mesh:
 training:
   ewc_enabled: False
   ewc_lambda: 0.1
+
+  mas_enabled: True
+  mas:
+    lambda: 1           # MAS 正则系数 λ
+    frames_per_task: 100  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
+
+
+  kr_enabled: False
+  kr:
+    K: 10 # 保留的关键帧个数
+    num_replay_rays: 256 # 每次 BA 从这 K 个 KF 总共采样多少条射线
+
+
+  cnm_enabled: False
+  cnm:
+    frames_per_task: 100
+    buffer_size: 200000
+    num_samples_per_teacher: 200000    # 每次 teacher 更新时生成的伪样本数
+    num_offsurface_samples: 1024      # 每次 BA 取多少伪样本
+    offsurface_weight: 0.01           # 整体 CNM loss 权重，建议先小一点
+    alpha: 6.0                        # ψ_s 中的 α
+    near_threshold: 0.05              # |sdf_old| < 0.05 视为 near-surface
+    value_weight_near: 1.0            # near 区域 value consistency 权重
+    value_weight_far: 0.1             # far 区域 value consistency 权重
+
+
   temporal_consensus:
-    enabled: True
+    enabled: False
     K: 1
     frames_per_task: 100
     inject_every: 2
@@ -32,7 +58,7 @@ data:
   datadir: data/scannet/scene0000_00
   trainskip: 1
   output: output/scannet/scene0000_00
-  exp_name: CADMM
+  exp_name: MAS
   load_path: fixed_decoder.pt
 
 tracking:
@@ -45,7 +71,7 @@ multi_agents:
   #edges_list: [[0,1], [0,2], [1,2]]
   #edges_for_dropout: [ [0,1,0.99], [0,2,0.99], [1,2,0.99] ] # [node i, node j, possibility of dropping out]
   edges_for_dropout: []
-  distributed_algorithm: 'CADMM'
+  distributed_algorithm: 'AUQ_CADMM'
   rho: 0.0001
   track_uncertainty: True
   fix_decoder: True
