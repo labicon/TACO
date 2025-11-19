@@ -5,10 +5,9 @@ import torch
 class MAS:
     """
     Memory Aware Synapses (MAS) for continual learning.
-
-    - omega_acc: 在一个任务期间累积的梯度重要性（未归一化）
-    - omega:     归一化后的重要性 Ω_{ij}
-    - theta_star: 上一任务收敛后的参数 θ^*
+    严格遵照论文实现：
+    - 使用输出函数的 L2 范数平方的梯度来近似参数敏感度。
+    - 累积梯度的绝对值。
     """
 
     def __init__(self, mapping, lam: float = 1.0):
@@ -48,28 +47,32 @@ class MAS:
         """
         在一次 backward 之后调用：
         - 用当前梯度 |∂(||F||^2)/∂θ| 累积到 omega_acc
+        - 对应论文公式 (2): Omega = 1/N * sum( ||g(x)|| )
         """
         self.init_if_needed()
         self.acc_steps += 1
         for name, p in self.mapping.model.named_parameters():
             if not p.requires_grad or p.grad is None:
                 continue
+            # 关键：累积梯度的绝对值
             self.omega_acc[name] += p.grad.detach().abs()
 
     @torch.no_grad()
     def finalize_importance(self):
         """
         在任务结束时调用：
-        - 将 omega_acc / acc_steps 累积到 omega（可以累加多任务）
+        - 将 omega_acc / acc_steps 累积到 omega
         - 更新 theta_star 为当前参数
         """
         self.init_if_needed()
         if self.acc_steps == 0:
             return
 
+        # 计算平均重要性
         for name in self.omega:
             self.omega[name] += self.omega_acc[name] / float(self.acc_steps)
 
+        # 更新锚点参数 theta*
         for name, p in self.mapping.model.named_parameters():
             if not p.requires_grad:
                 continue

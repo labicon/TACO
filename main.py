@@ -1007,11 +1007,39 @@ class Mapping():
 
             # 先反传一次，用当前任务的梯度来估 MAS 重要性
             if getattr(self, 'mas_enabled', False):
-                # 暂时不加正则，只用当前任务 loss 计算梯度敏感度
-                loss = self.get_loss_from_ret(ret, smooth=True)
-                loss.backward(retain_graph=True)
+                # 论文方法：计算学习函数输出的 L2 范数平方的梯度
+                # 我们将 SLAM 的所有输出 (RGB, Depth, SDF) 都包含在内
+                # F(x) = [RGB, Depth, SDF]
+                # Proxy Loss = ||RGB||^2 + ||Depth||^2 + ||SDF||^2
+                
+                mas_proxy_loss = 0.0
+                
+                # 1. 渲染颜色输出 [N, 3]
+                if 'rgb' in ret:
+                    mas_proxy_loss += ret['rgb'].pow(2).sum()
+                
+                # 2. 渲染深度输出 [N, 1]
+                if 'depth' in ret:
+                    mas_proxy_loss += ret['depth'].pow(2).sum()
+                
+                # 3. SDF 场输出 [N, K, 1] (沿射线的采样点)
+                # 包含 SDF 能直接保护隐式几何场的数值稳定性
+                if 'sdf' in ret:
+                    mas_proxy_loss += ret['sdf'].pow(2).sum()
+
+                # 归一化：除以 Batch Size (N)
+                # 对应论文公式中的 1/N 求和
+                batch_size = ret['rgb'].shape[0]
+                mas_proxy_loss = mas_proxy_loss / batch_size
+                
+                # 反向传播计算梯度 (仅用于累积重要性)
+                mas_proxy_loss.backward(retain_graph=True)
+                
+                # 累积梯度绝对值
                 self.mas.accumulate_importance_from_grad()
-                self.map_optimizer.zero_grad()  # 清掉刚才那次 backward 的 grad，下面重新算总 loss
+                
+                # 关键：清空梯度！防止 Proxy Loss 影响真正的参数更新
+                self.map_optimizer.zero_grad()
 
             loss = self.get_loss_from_ret(ret, smooth=True)
 
