@@ -37,6 +37,7 @@ from optimization.utils import at_to_transform_matrix, qt_to_transform_matrix, m
 from baselines.CNM import CNMTeacher, CNMOffsurfaceReplay
 from baselines.KR import KRKeyframeReplay
 from baselines.MAS import MAS
+from baselines.UNIKD import UNIKD
 
 import sys
 
@@ -112,6 +113,18 @@ class Mapping():
         self.gt_pose = config['tracking']['gt_pose']
         print(f'If agent{self.agent_id} uses gt pose: {self.gt_pose}')
 
+
+        # --- 新增：时序共识 (Incremental UDON) 参数 ---
+        self.temporal_consensus_config = self.config['training'].get('temporal_consensus', {})
+        self.temporal_consensus_enabled = self.temporal_consensus_config.get('enabled', False)
+        self.uncert_decay = self.temporal_consensus_config.get('uncertainty_decay', 1.0)
+        if self.temporal_consensus_enabled:
+            self.K = self.temporal_consensus_config.get('K', 1)  # 快照窗口大小
+            # 使用maxlen的deque可以自动维护一个固定大小的滑动窗口
+            # 队列中存储 (参数, 不确定性) 的元组
+            self.temporal_snapshots = deque(maxlen=self.K)
+            print(f"Agent {self.agent_id} has Temporal Consensus enabled with window size K={self.K}.")
+
         # EWC parameters
         self.ewc_enabled = config['training'].get('ewc_enabled', False)
         if self.ewc_enabled:
@@ -119,17 +132,6 @@ class Mapping():
             self.fisher_matrix = None
             self.optimal_params = None
             print(f"Agent {self.agent_id} has EWC enabled with lambda={self.ewc_lambda}")
-
-        # --- 新增：时序共识 (Incremental UDON) 参数 ---
-        self.temporal_consensus_config = self.config['training'].get('temporal_consensus', {})
-        self.temporal_consensus_enabled = self.temporal_consensus_config.get('enabled', False)
-        self.uncert_decay = self.temporal_consensus_config.get('uncertainty_decay', 0.99)
-        if self.temporal_consensus_enabled:
-            self.K = self.temporal_consensus_config.get('K', 1)  # 快照窗口大小
-            # 使用maxlen的deque可以自动维护一个固定大小的滑动窗口
-            # 队列中存储 (参数, 不确定性) 的元组
-            self.temporal_snapshots = deque(maxlen=self.K)
-            print(f"Agent {self.agent_id} has Temporal Consensus enabled with window size K={self.K}.")
 
 
         # --- CNM: Continual Neural Mapping 基线 ---
@@ -167,7 +169,12 @@ class Mapping():
             self.mas = MAS(self, lam=mas_lambda)
             print(f"Agent {self.agent_id} has MAS enabled with lambda={mas_lambda}.")
 
-
+        # --- 【新增】UNIKD 初始化 ---
+        self.unikd_enabled = self.config['training'].get('unikd_enabled', False)
+        if self.unikd_enabled:
+            unikd_cfg = self.config['training'].get('unikd', {})
+            self.unikd = UNIKD(self, unikd_cfg)
+            print(f"Agent {self.agent_id} has UNIKD enabled.")
 
         # Replay parameter
         self.enable_replay = self.config['mapping'].get('enable_replay', True)
@@ -364,6 +371,26 @@ class Mapping():
         model_dict = dict['model']
         del model_dict['embedpos_fn.params']
         del model_dict['embed_fn.params']
+
+        if self.unikd_enabled:
+                    own_state = self.model.state_dict()
+                    for name, param in list(model_dict.items()):
+                        if name in own_state:
+                            if param.shape != own_state[name].shape:
+                                # 检测是否是 ColorNet 的输出层 (3 -> 4)
+                                # 权重形状通常是 [out_channels, in_channels]
+                                if param.ndim == 2 and param.shape[0] == 3 and own_state[name].shape[0] == 4 and param.shape[1] == own_state[name].shape[1]:
+                                    print(f"Agent {self.agent_id}: Adapting {name} from {param.shape} to {own_state[name].shape} for UNIKD.")
+                                    
+                                    # 1. 创建新的参数，使用当前模型的初始化值 (这样第4维就是随机初始化的，不会是0)
+                                    new_param = own_state[name].clone() 
+                                    
+                                    # 2. 将预训练的 RGB 权重 (前3行) 复制过去
+                                    new_param[:3, :] = param 
+                                    
+                                    # 3. 更新字典，替换掉旧的参数
+                                    model_dict[name] = new_param
+
         self.model.load_state_dict(model_dict, strict=False) # load from a partial state_dict missing some keys, use strict=False
     
 
@@ -459,29 +486,44 @@ class Mapping():
 
             # Forward
             ret = self.model.forward(rays_o, rays_d, target_s, target_d)
+
+            # 1. 先清空梯度
+            self.map_optimizer.zero_grad()
+
+            # 2. 【新增】计算结构梯度 (Proxy Loss)
+            if self.track_uncertainty:
+                mas_proxy_loss = 0.0
+                if 'rgb' in ret: mas_proxy_loss += ret['rgb'].pow(2).sum()
+                if 'depth' in ret: mas_proxy_loss += ret['depth'].pow(2).sum()
+                if 'sdf' in ret: mas_proxy_loss += ret['sdf'].pow(2).sum()
+                mas_proxy_loss = mas_proxy_loss / ret['rgb'].shape[0]
+                
+                mas_proxy_loss.backward(retain_graph=True)
+                
+                grid_grad = self.model.embed_fn.params.grad
+                if grid_grad is not None:
+                    grad_mag = torch.abs(grid_grad)
+                    # 使用和 global_BA 一样的更新策略
+                    self.uncertainty_tensor *= self.uncert_decay
+                    self.uncertainty_tensor += grad_mag
+                
+                # 清空梯度，准备算真正的 Loss
+                self.map_optimizer.zero_grad()
+
             loss = self.get_loss_from_ret(ret)
             loss.backward()
-
+            
+            """            
             if self.track_uncertainty:
-                if self.config['grid']['enc'] == 'tensor':
-                    # For TensorCP, iterate through its parameters to get gradients
-                    grads = []
-                    for p in self.model.embed_fn.parameters():
-                        if p.grad is not None:
-                            grads.append(p.grad.view(-1))
-                    if grads:
-                        grid_grad = torch.cat(grads)
-                    else:
-                        grid_grad = torch.tensor([], device=self.device)
-                else:
-                    # Original code for tcnn encoders
-                    grid_grad = self.model.embed_fn.params.grad
+
+                grid_grad = self.model.embed_fn.params.grad
                 
                 if grid_grad is not None and grid_grad.numel() > 0:
                     grid_has_grad = (torch.abs(grid_grad) > 0).to(torch.int32)
                     self.uncertainty_tensor *= self.uncert_decay
                     self.uncertainty_tensor += grid_has_grad
-
+            """
+                
 
             self.map_optimizer.step()
 
@@ -612,6 +654,7 @@ class Mapping():
         return float(self.temporal_consensus_config.get('gamma', 1.0))
     
     def scaling_AUQ_CADMM(self, k, uncertainty_i, uncertainty_j):
+
         uncertainty = uncertainty_i + uncertainty_j
         a_1 = self.rho/1000
         b_1 = self.rho
@@ -685,7 +728,7 @@ class Mapping():
                 uncertainty_j = neighbor[2]
                 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
-               # 非对称：伪邻居（负数 ID）时对 W_i 乘以 gamma_t
+                # 非对称：伪邻居（负数 ID）时对 W_i 乘以 gamma_t
                 gamma_t = 1.0
                 if isinstance(neighbor_id, int) and neighbor_id < 0:
                     gamma_t = self.get_gamma_t(k)
@@ -948,180 +991,218 @@ class Mapping():
             else:
                 ids_all = torch.cat([ids//self.config['mapping']['keyframe_every'], -torch.ones((len(idx_cur)))]).to(torch.int64)
             """
-            rays_list = []
-            ids_pose_list = []
-
-            # 1) 先看 KR：如果 kr_enabled=True，则只用 KR-replay（不走原 replay）
-            if getattr(self, 'kr_enabled', False) and len(self.keyframeDatabase.frame_ids) > 0:
-                kr_cfg = self.config['training'].get('kr', {})
-                num_replay_rays = kr_cfg.get('num_replay_rays', self.config['mapping']['sample'])
-                rays_kr, ids_pose_kr = self.kr_replay.sample_replay_rays(num_replay_rays)
-                if rays_kr.shape[0] > 0:
-                    rays_list.append(rays_kr)
-                    ids_pose_list.append(ids_pose_kr.to(torch.int64))
-
-            # 2) 如果没开 KR，但 enable_replay=True，则走原来的 global replay
-            elif self.enable_replay and len(self.keyframeDatabase.frame_ids) > 0:
-                rays_rep, ids_rep = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'])
-                if rays_rep.shape[0] > 0:
-                    rays_list.append(rays_rep)
-                    ids_pose_list.append((ids_rep // self.config['mapping']['keyframe_every']).to(torch.int64))
-
-            # 3) 当前帧采样 pixels（无论是否有 replay，都要有当前帧）
-            sample_size = self.config['mapping']['sample']
-            if self.enable_replay and not self.ewc_enabled and len(self.keyframeDatabase.frame_ids) > 0:
-                sample_size = max(
-                    self.config['mapping']['sample'] // max(len(self.keyframeDatabase.frame_ids), 1),
-                    self.config['mapping']['min_pixels_cur']
-                )
-
-            idx_cur = random.sample(
-                range(0, self.dataset_info['H'] * self.dataset_info['W']),
-                sample_size
-            )
-            idx_cur = torch.tensor(idx_cur, dtype=torch.long)
-            current_rays_batch = current_rays[idx_cur, :]  # [Nc,7]
-
-            rays_list.append(current_rays_batch)
-            ids_cur = -torch.ones((current_rays_batch.shape[0],), dtype=torch.int64)
-            ids_pose_list.append(ids_cur)
-
-            # 拼接所有 rays（至少包含当前帧）
-            rays = torch.cat(rays_list, dim=0)  # [N,7]
-            ids_all = torch.cat(ids_pose_list, dim=0)  # [N]
-
-            rays_d_cam = rays[..., :3].to(self.device)
-            target_s = rays[..., 3:6].to(self.device)
-            target_d = rays[..., 6:7].to(self.device)
-
-            # [N, Bs, 1, 3] * [N, 1, 3, 3] = (N, Bs, 3)
-            rays_d = torch.sum(rays_d_cam[..., None, None, :] * poses_all[ids_all, None, :3, :3], -1)
-            rays_o = poses_all[ids_all, None, :3, -1].repeat(1, rays_d.shape[1], 1).reshape(-1, 3)
-            rays_d = rays_d.reshape(-1, 3)
-
-            ret = self.model.forward(rays_o, rays_d, target_s, target_d)
-
-            self.map_optimizer.zero_grad()
-
+            # --- 【新增】UNIKD 交替训练逻辑 ---
+            is_distillation_step = False
+            loss = 0
             
+            # 奇数步且 Teacher 存在时，执行蒸馏
+            if self.unikd_enabled and (i % 2 == 1) and (self.unikd.teacher_model is not None):
+                rays_o, rays_d, teacher_out = self.unikd.get_distillation_batch(self.config['mapping']['sample'])
+                if rays_o is not None:
+                    is_distillation_step = True
+                    
+                    # Forward Student
+                    ret = self.model.forward(rays_o, rays_d, target_rgb=None, target_d=None)
+                    
+                    # Distillation Loss
+                    pred_unc = ret.get('uncertainty', torch.zeros_like(ret['rgb'][..., 0:1]))
+                    loss = self.unikd.unikd_loss(ret['rgb'], teacher_out['rgb'], pred_unc)
+                    
+                    # 清空梯度 (因为下面逻辑里有 zero_grad，这里先清一下保险)
+                    self.map_optimizer.zero_grad()
 
-            # 先反传一次，用当前任务的梯度来估 MAS 重要性
-            if getattr(self, 'mas_enabled', False):
-                # 论文方法：计算学习函数输出的 L2 范数平方的梯度
-                # 我们将 SLAM 的所有输出 (RGB, Depth, SDF) 都包含在内
-                # F(x) = [RGB, Depth, SDF]
-                # Proxy Loss = ||RGB||^2 + ||Depth||^2 + ||SDF||^2
-                
-                mas_proxy_loss = 0.0
-                
-                # 1. 渲染颜色输出 [N, 3]
-                if 'rgb' in ret:
-                    mas_proxy_loss += ret['rgb'].pow(2).sum()
-                
-                # 2. 渲染深度输出 [N, 1]
-                if 'depth' in ret:
-                    mas_proxy_loss += ret['depth'].pow(2).sum()
-                
-                # 3. SDF 场输出 [N, K, 1] (沿射线的采样点)
-                # 包含 SDF 能直接保护隐式几何场的数值稳定性
-                if 'sdf' in ret:
-                    mas_proxy_loss += ret['sdf'].pow(2).sum()
+            # 如果不是蒸馏步，执行正常的监督学习 (Supervised Step)
+            if not is_distillation_step:
+                rays_list = []
+                ids_pose_list = []
 
-                # 归一化：除以 Batch Size (N)
-                # 对应论文公式中的 1/N 求和
-                batch_size = ret['rgb'].shape[0]
-                mas_proxy_loss = mas_proxy_loss / batch_size
-                
-                # 反向传播计算梯度 (仅用于累积重要性)
-                mas_proxy_loss.backward(retain_graph=True)
-                
-                # 累积梯度绝对值
-                self.mas.accumulate_importance_from_grad()
-                
-                # 关键：清空梯度！防止 Proxy Loss 影响真正的参数更新
+                # 1) 先看 KR：如果 kr_enabled=True，则只用 KR-replay（不走原 replay）
+                if getattr(self, 'kr_enabled', False) and len(self.keyframeDatabase.frame_ids) > 0:
+                    kr_cfg = self.config['training'].get('kr', {})
+                    num_replay_rays = kr_cfg.get('num_replay_rays', self.config['mapping']['sample'])
+                    rays_kr, ids_pose_kr = self.kr_replay.sample_replay_rays(num_replay_rays)
+                    if rays_kr.shape[0] > 0:
+                        rays_list.append(rays_kr)
+                        ids_pose_list.append(ids_pose_kr.to(torch.int64))
+
+                # 2) 如果没开 KR，但 enable_replay=True，则走原来的 global replay
+                elif self.enable_replay and len(self.keyframeDatabase.frame_ids) > 0:
+                    rays_rep, ids_rep = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'])
+                    if rays_rep.shape[0] > 0:
+                        rays_list.append(rays_rep)
+                        ids_pose_list.append((ids_rep // self.config['mapping']['keyframe_every']).to(torch.int64))
+
+                # 3) 当前帧采样 pixels（无论是否有 replay，都要有当前帧）
+                sample_size = self.config['mapping']['sample']
+                if self.enable_replay and not self.ewc_enabled and len(self.keyframeDatabase.frame_ids) > 0:
+                    sample_size = max(
+                        self.config['mapping']['sample'] // max(len(self.keyframeDatabase.frame_ids), 1),
+                        self.config['mapping']['min_pixels_cur']
+                    )
+
+                idx_cur = random.sample(
+                    range(0, self.dataset_info['H'] * self.dataset_info['W']),
+                    sample_size
+                )
+                idx_cur = torch.tensor(idx_cur, dtype=torch.long)
+                current_rays_batch = current_rays[idx_cur, :]  # [Nc,7]
+
+                rays_list.append(current_rays_batch)
+                ids_cur = -torch.ones((current_rays_batch.shape[0],), dtype=torch.int64)
+                ids_pose_list.append(ids_cur)
+
+                # 拼接所有 rays（至少包含当前帧）
+                rays = torch.cat(rays_list, dim=0)  # [N,7]
+                ids_all = torch.cat(ids_pose_list, dim=0)  # [N]
+
+                rays_d_cam = rays[..., :3].to(self.device)
+                target_s = rays[..., 3:6].to(self.device)
+                target_d = rays[..., 6:7].to(self.device)
+
+                # [N, Bs, 1, 3] * [N, 1, 3, 3] = (N, Bs, 3)
+                rays_d = torch.sum(rays_d_cam[..., None, None, :] * poses_all[ids_all, None, :3, :3], -1)
+                rays_o = poses_all[ids_all, None, :3, -1].repeat(1, rays_d.shape[1], 1).reshape(-1, 3)
+                rays_d = rays_d.reshape(-1, 3)
+
+                ret = self.model.forward(rays_o, rays_d, target_s, target_d)
+
                 self.map_optimizer.zero_grad()
 
-            loss = self.get_loss_from_ret(ret, smooth=True)
+                # 开关：如果是 Temporal 模式且开启了不确定性追踪，或者是 MAS 模式
+                calc_structural_grad = (self.track_uncertainty and self.temporal_consensus_enabled) or \
+                                    getattr(self, 'mas_enabled', False)
 
-            # Add EWC loss if enabled
-            if self.ewc_enabled:
-                loss += self.ewc_loss()
+                if calc_structural_grad:
+                    # 1. 构建 Proxy Loss (只看输出幅度，不看 GT 误差)
+                    mas_proxy_loss = 0.0
+                    if 'rgb' in ret: mas_proxy_loss += ret['rgb'].pow(2).sum()
+                    if 'depth' in ret: mas_proxy_loss += ret['depth'].pow(2).sum()
+                    if 'sdf' in ret: mas_proxy_loss += ret['sdf'].pow(2).sum()
+                    
+                    mas_proxy_loss = mas_proxy_loss / ret['rgb'].shape[0] # Mean
+                    
+                    # 2. 反向传播获取“结构梯度”
+                    mas_proxy_loss.backward(retain_graph=True)
 
-            # --- CNM: off-surface function replay loss ---
-            if getattr(self, 'cnm_enabled', False):
-                # 从 CNM 专用 buffer 取一批 (x, sdf_teacher)，对当前模型加符号 & 数值一致性约束
-                loss += self.cnm_replay.compute_loss(self.cnm_teacher)
+                    # 3. 如果开启了 MAS，累积给 MAS
+                    if getattr(self, 'mas_enabled', False):
+                        self.mas.accumulate_importance_from_grad()
 
-            # --- MAS loss: parameter importance regularization ---
-            if getattr(self, 'mas_enabled', False):
-                loss += self.mas.mas_loss()
+                    # 4. 【关键】如果开启了 Temporal，更新 W (Uncertainty)
+                    if self.track_uncertainty and self.temporal_consensus_enabled:
+                        # 获取梯度
+                        grid_grad = self.model.embed_fn.params.grad
 
-            loss.backward(retain_graph=True)
-            mean_obj_loss += loss.item() #item() method extracts the loss’s value as a Python float.
-  
-            if self.track_uncertainty:
-                if self.config['grid']['enc'] == 'tensor':
-                    # For TensorCP, iterate through its parameters to get gradients
-                    grads = []
-                    for p in self.model.embed_fn.parameters():
-                        if p.grad is not None:
-                            grads.append(p.grad.view(-1))
-                    if grads:
-                        grid_grad = torch.cat(grads)
-                    else:
-                        grid_grad = torch.tensor([], device=self.device)
+                        if grid_grad is not None:
+                            # 获取幅度
+                            grad_mag = torch.abs(grid_grad)
+                            
+                            # 改进点 2: 调整衰减策略
+                            # MAS 是累加不衰减的。为了模拟 MAS，我们应该调大 decay 或者不衰减
+                            # 如果 decay < 1.0，结构信息会随时间流失
+                            # 建议：对于结构梯度，使用 max() 或者 极慢的 decay (0.999)
+                            
+                            # 方案 A: 累加 (像 MAS 一样) -> W 会越来越大，越来越硬
+                            # self.uncertainty_tensor += grad_mag 
+                            
+                            # 方案 B: 滑动平均 (保持动态性) -> 推荐
+                            self.uncertainty_tensor *= self.uncert_decay 
+                            self.uncertainty_tensor += grad_mag 
+                            
+                    # 5. 清空梯度，准备计算真正的 Loss
+                    self.map_optimizer.zero_grad()
+
+                    # 【修改】Loss 计算
+                if self.unikd_enabled:
+                    # 使用 UNIKD 的不确定性加权 Loss
+                    pred_unc = ret.get('uncertainty', torch.zeros_like(ret['rgb'][..., 0:1]))
+                    loss = self.unikd.unikd_loss(ret['rgb'], target_s, pred_unc)
+                    # 加上其他 Loss (Depth, SDF, Smoothness)
+                    loss += self.get_loss_from_ret(ret, rgb=False) 
                 else:
-                    # Original code for tcnn encoders
-                    grid_grad = self.model.embed_fn.params.grad
-                
-                if grid_grad is not None and grid_grad.numel() > 0:
-                    grid_has_grad = (torch.abs(grid_grad) > 0).to(torch.int32)
-                    self.uncertainty_tensor += grid_has_grad
-                    #set tf 
-                    if len(self.keyframeDatabase.frame_ids) > 0:
-                        current_step = self.keyframeDatabase.frame_ids[-1]
-                        
-                        uncert_log = self.uncertainty_tensor.detach().cpu().float()
+                    # 原有 Loss
+                    loss = self.get_loss_from_ret(ret, smooth=True)
 
-                        self.writer.add_scalar('Uncertainty/Mean', uncert_log.mean(), current_step)
-                        self.writer.add_scalar('Uncertainty/Std', uncert_log.std(), current_step)
-                        self.writer.add_scalar('Uncertainty/Max', uncert_log.max(), current_step)
-                        self.writer.add_scalar('Uncertainty/Min', uncert_log.min(), current_step)
+                # Add EWC loss if enabled
+                if self.ewc_enabled:
+                    loss += self.ewc_loss()
+
+                # --- CNM: off-surface function replay loss ---
+                if getattr(self, 'cnm_enabled', False):
+                    # 从 CNM 专用 buffer 取一批 (x, sdf_teacher)，对当前模型加符号 & 数值一致性约束
+                    loss += self.cnm_replay.compute_loss(self.cnm_teacher)
+
+                # --- MAS loss: parameter importance regularization ---
+                if getattr(self, 'mas_enabled', False):
+                    loss += self.mas.mas_loss()
+
+                loss.backward(retain_graph=True)
+                mean_obj_loss += loss.item() #item() method extracts the loss’s value as a Python float.
+    
+                """
+                if self.track_uncertainty:
+                    if self.config['grid']['enc'] == 'tensor':
+                        # For TensorCP, iterate through its parameters to get gradients
+                        grads = []
+                        for p in self.model.embed_fn.parameters():
+                            if p.grad is not None:
+                                grads.append(p.grad.view(-1))
+                        if grads:
+                            grid_grad = torch.cat(grads)
+                        else:
+                            grid_grad = torch.tensor([], device=self.device)
                     else:
-                        print("no frame ids in keyframe database, cannot log uncertainty")
+                        # Original code for tcnn encoders
+                        grid_grad = self.model.embed_fn.params.grad
+                    
+                    if grid_grad is not None and grid_grad.numel() > 0:
+                        grid_has_grad = (torch.abs(grid_grad) > 0).to(torch.int32)
+                        self.uncertainty_tensor += grid_has_grad
+                        #set tf 
+                        if len(self.keyframeDatabase.frame_ids) > 0:
+                            current_step = self.keyframeDatabase.frame_ids[-1]
+                            
+                            uncert_log = self.uncertainty_tensor.detach().cpu().float()
+
+                            self.writer.add_scalar('Uncertainty/Mean', uncert_log.mean(), current_step)
+                            self.writer.add_scalar('Uncertainty/Std', uncert_log.std(), current_step)
+                            self.writer.add_scalar('Uncertainty/Max', uncert_log.max(), current_step)
+                            self.writer.add_scalar('Uncertainty/Min', uncert_log.min(), current_step)
+                        else:
+                            print("no frame ids in keyframe database, cannot log uncertainty")
+
+                """
 
 
+                if dist_algorithm == 'CADMM':
+                    loss, lag_loss, aug_loss = self.primal_update(theta_i_k, loss)
+                    loss.backward(retain_graph=True)
+                    self.map_optimizer.step()
+                    mean_lag_loss += lag_loss
+                    mean_aug_loss += aug_loss
+
+                elif dist_algorithm == 'AUQ_CADMM':
+                    loss, lag_loss, aug_loss  = self.primal_update_AUQ_CADMM(theta_i_k, loss, self.uncertainty_tensor, cur_frame_id)
+                    loss.backward(retain_graph=True)
+                    self.map_optimizer.step()
+                    mean_lag_loss += lag_loss
+                    mean_aug_loss += aug_loss
+
+                elif dist_algorithm == 'MACIM':
+                    loss = self.MACIM_cc_loss(loss)
+                    loss.backward(retain_graph=True)
+                    self.map_optimizer.step()
+
+                elif dist_algorithm == 'DSGD':
+                    self.DSGD_update()
+                    break # DSDG does one update per mapping iteration 
+
+                elif dist_algorithm == 'DSGT':
+                    self.DSGT_update()
+                    break # DSDT does one update per mapping iteration 
 
 
-            if dist_algorithm == 'CADMM':
-                loss, lag_loss, aug_loss = self.primal_update(theta_i_k, loss)
-                loss.backward(retain_graph=True)
-                self.map_optimizer.step()
-                mean_lag_loss += lag_loss
-                mean_aug_loss += aug_loss
-
-            elif dist_algorithm == 'AUQ_CADMM':
-                loss, lag_loss, aug_loss  = self.primal_update_AUQ_CADMM(theta_i_k, loss, self.uncertainty_tensor, cur_frame_id)
-                loss.backward(retain_graph=True)
-                self.map_optimizer.step()
-                mean_lag_loss += lag_loss
-                mean_aug_loss += aug_loss
-
-            elif dist_algorithm == 'MACIM':
-                loss = self.MACIM_cc_loss(loss)
-                loss.backward(retain_graph=True)
-                self.map_optimizer.step()
-
-            elif dist_algorithm == 'DSGD':
-                self.DSGD_update()
-                break # DSDG does one update per mapping iteration 
-
-            elif dist_algorithm == 'DSGT':
-                self.DSGT_update()
-                break # DSDT does one update per mapping iteration 
-
-
-            mean_total_loss += loss.item()
+                mean_total_loss += loss.item()
 
 
         # save loss info 
@@ -1148,6 +1229,9 @@ class Mapping():
         '''
         c2w_gt = batch['c2w'][0].to(self.device)
         self.est_c2w_data[frame_id] = c2w_gt
+         # --- 【新增】UNIKD 更新 Pose 边界 ---
+        if self.unikd_enabled:
+            self.unikd.update_pose_bounds(c2w_gt)
 
 
     def create_optimizer(self):
@@ -1195,7 +1279,11 @@ class Mapping():
         # First frame mapping
         if i == 0:
             self.first_frame_mapping(batch, self.config['mapping']['first_iters'])
+            if self.temporal_consensus_enabled:
+                print(f"Agent {self.agent_id}: Initial snapshot at frame 0")
+                self.update_temporal_snapshot()
             return 
+            
         
         # Tracking + Mapping
         self.tracking_render(batch, i)
@@ -1213,7 +1301,13 @@ class Mapping():
             if self.ewc_enabled:
                 self.compute_fisher_matrix()
 
-
+        # --- 【新增】UNIKD 在任务边界更新 Teacher ---
+        if self.unikd_enabled:
+            unikd_cfg = self.config['training'].get('unikd', {})
+            frames_per_task = unikd_cfg.get('frames_per_task', 100)
+            if i > 0 and (i % frames_per_task) == 0:
+                self.unikd.update_teacher()
+        
          # --- CNM: 在任务边界更新 teacher 并填充 CNM buffer ---
         if getattr(self, 'cnm_enabled', False):
             cnm_cfg = self.config['training'].get('cnm', {})
@@ -1228,7 +1322,7 @@ class Mapping():
         # --- 新增：周期性地创建历史快照 ---
         if self.temporal_consensus_enabled:
             frames_per_task = self.temporal_consensus_config.get('frames_per_task', 500)
-            # 在每个任务结束时（例如第500帧，第1000帧...）更新快照
+            # 在每个任务结束时更新快照
             if i > 0 and i % frames_per_task == 0:
                 self.update_temporal_snapshot()
 

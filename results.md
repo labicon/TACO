@@ -160,6 +160,30 @@ CD: 4.98
 precision@5cm: 83.14
 F1@5cm: 85.87
 
+Ours after MAS loss 10
+accuracy: 2.97
+completion: 2.90
+completion ratio: 92.94
+CD: 2.93
+precision@5cm: 90.73
+F1@5cm: 91.82
+
+Ours after MAS loss 15
+accuracy: 3.14
+completion: 2.83
+completion ratio: 93.40
+CD: 2.98
+precision@5cm: 91.37
+F1@5cm: 92.37
+
+Ours after MAS loss 20
+accuracy: 3.19
+completion: 2.80
+completion ratio: 93.71
+CD: 2.99
+precision@5cm: 91.01
+F1@5cm: 92.34
+
 CADMM
 accuracy: 7.24
 completion: 3.97
@@ -167,6 +191,14 @@ completion ratio: 87.31
 CD: 5.60
 precision@5cm: 80.20
 F1@5cm: 83.60
+
+MAS
+accuracy: 3.40
+completion: 3.03
+completion ratio: 90.87
+CD: 3.22
+precision@5cm: 86.92
+F1@5cm: 88.85
 
 CNM
 accuracy: 31.00
@@ -266,21 +298,14 @@ CD: 3.30
 precision@5cm: 87.32
 F1@5cm: 90.43
 
-gamma0.2
-accuracy: 3.15
-completion: 1.93
-completion ratio: 94.11
-CD: 2.54
-precision@5cm: 90.29
-F1@5cm: 92.16
+Ours (mas) 0.1
+accuracy: 2.90
+completion: 1.79
+completion ratio: 94.97
+CD: 2.34
+precision@5cm: 90.31
+F1@5cm: 92.58
 
-gamma1
-accuracy: 3.70
-completion: 1.90
-completion ratio: 94.04
-CD: 2.80
-precision@5cm: 89.29
-F1@5cm: 91.60
 
 Normal
 accuracy: 1.79
@@ -291,12 +316,20 @@ precision@5cm: 94.47
 F1@5cm: 95.05
 
 MAS
-accuracy: 3.42
-completion: 1.78
-completion ratio: 95.01
-CD: 2.60
-precision@5cm: 89.20
-F1@5cm: 92.01
+accuracy: 2.91
+completion: 1.79
+completion ratio: 94.97
+CD: 2.35
+precision@5cm: 90.30
+F1@5cm: 92.58
+
+UNIKD
+accuracy: 5.02
+completion: 2.20
+completion ratio: 94.06
+CD: 3.61
+precision@5cm: 85.73
+F1@5cm: 89.70
 
 KR
 accuracy: 8.97
@@ -322,34 +355,3 @@ CD: 24.67
 precision@5cm: 28.51
 F1@5cm: 38.27
 
-Full_CNM_alpha12_weight0.02_200k
-accuracy: 6.11
-completion: 2.43
-completion ratio: 91.17
-CD: 4.27
-precision@5cm: 78.30
-F1@5cm: 84.24
-
-Full_CNM_alpha14_weight0.1_20k
-accuracy: 6.29
-completion: 2.17
-completion ratio: 92.82
-CD: 4.23
-precision@5cm: 80.83
-F1@5cm: 86.41
-
-Full_CNM_alpha12_weight0.02_20k
-accuracy: 5.15
-completion: 2.25
-completion ratio: 92.22
-CD: 3.70
-precision@5cm: 81.21
-F1@5cm: 86.37
-
-Full_CNM_alpha14_weight0.02_20k
-accuracy: 5.74
-completion: 2.40
-completion ratio: 90.75
-CD: 4.07
-precision@5cm: 79.19
-F1@5cm: 84.58

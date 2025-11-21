@@ -16,7 +16,7 @@ training:
   ewc_enabled: False
   ewc_lambda: 0.1
 
-  mas_enabled: True
+  mas_enabled: False
   mas:
     lambda: 1           # MAS 正则系数 λ
     frames_per_task: 100  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
@@ -42,12 +42,12 @@ training:
 
 
   temporal_consensus:
-    enabled: False
+    enabled: True
     K: 1
-    frames_per_task: 100
-    inject_every: 2
-    gamma: 1 
-    uncertainty_decay: 0.99  
+    frames_per_task: 10
+    inject_every: 1
+    gamma: 0.2 
+    uncertainty_decay: 1.0
 
 
 grid:
@@ -58,7 +58,7 @@ data:
   datadir: data/scannet/scene0000_00
   trainskip: 1
   output: output/scannet/scene0000_00
-  exp_name: MAS
+  exp_name: Ours(mas)_2_rho_0.1_frames15
   load_path: fixed_decoder.pt
 
 tracking:
@@ -72,7 +72,7 @@ multi_agents:
   #edges_for_dropout: [ [0,1,0.99], [0,2,0.99], [1,2,0.99] ] # [node i, node j, possibility of dropping out]
   edges_for_dropout: []
   distributed_algorithm: 'AUQ_CADMM'
-  rho: 0.0001
+  rho: 0.1
   track_uncertainty: True
   fix_decoder: True
   alpha: 0.15 # DSGD

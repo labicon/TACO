@@ -5,13 +5,14 @@ import tinycudann as tcnn
 
 class ColorNet(nn.Module):
     def __init__(self, config, input_ch=4, geo_feat_dim=15, 
-                hidden_dim_color=64, num_layers_color=3):
+                hidden_dim_color=64, num_layers_color=3, predict_uncertainty=False):
         super(ColorNet, self).__init__()
         self.config = config
         self.input_ch = input_ch
         self.geo_feat_dim = geo_feat_dim
         self.hidden_dim_color = hidden_dim_color
         self.num_layers_color = num_layers_color
+        self.predict_uncertainty = predict_uncertainty # <--- 保存状态
 
         self.model = self.get_model(config['decoder']['tcnn_network'])
     
@@ -20,11 +21,13 @@ class ColorNet(nn.Module):
         return self.model(input_feat)
     
     def get_model(self, tcnn_network=False):
+        # 确定输出维度：如果有不确定性，输出 4 (RGB + Beta)，否则 3 (RGB)
+        out_dim_final = 4 if self.predict_uncertainty else 3 
         if tcnn_network:
             print('Color net: using tcnn')
             return tcnn.Network(
                 n_input_dims=self.input_ch + self.geo_feat_dim,
-                n_output_dims=3,
+                n_output_dims=out_dim_final, # <--- 使用动态维度,
                 network_config={
                     "otype": "FullyFusedMLP",
                     "activation": "ReLU",
@@ -43,7 +46,7 @@ class ColorNet(nn.Module):
                 in_dim = self.hidden_dim_color
             
             if l == self.num_layers_color - 1:
-                out_dim = 3 # 3 rgb
+                out_dim = out_dim_final # <--- 使用动态维度
             else:
                 out_dim = self.hidden_dim_color
             
@@ -113,11 +116,13 @@ class ColorSDFNet(nn.Module):
     def __init__(self, config, input_ch=3, input_ch_pos=12):
         super(ColorSDFNet, self).__init__()
         self.config = config
+        self.predict_uncertainty = config['training'].get('unikd_enabled', False)
         self.color_net = ColorNet(config, 
                 input_ch=input_ch+input_ch_pos, 
                 geo_feat_dim=config['decoder']['geo_feat_dim'], 
                 hidden_dim_color=config['decoder']['hidden_dim_color'], 
-                num_layers_color=config['decoder']['num_layers_color'])
+                num_layers_color=config['decoder']['num_layers_color'],
+                predict_uncertainty=self.predict_uncertainty)
         self.sdf_net = SDFNet(config,
                 input_ch=input_ch+input_ch_pos,
                 geo_feat_dim=config['decoder']['geo_feat_dim'],
@@ -146,11 +151,13 @@ class ColorSDFNet_v2(nn.Module):
     def __init__(self, config, input_ch=3, input_ch_pos=12):
         super(ColorSDFNet_v2, self).__init__()
         self.config = config
+        self.predict_uncertainty = config['training'].get('unikd_enabled', False)
         self.color_net = ColorNet(config, 
                 input_ch=input_ch_pos, 
                 geo_feat_dim=config['decoder']['geo_feat_dim'], 
                 hidden_dim_color=config['decoder']['hidden_dim_color'], 
-                num_layers_color=config['decoder']['num_layers_color'])
+                num_layers_color=config['decoder']['num_layers_color'],
+                predict_uncertainty=self.predict_uncertainty)
         self.sdf_net = SDFNet(config,
                 input_ch=input_ch+input_ch_pos,
                 geo_feat_dim=config['decoder']['geo_feat_dim'],

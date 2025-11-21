@@ -1,6 +1,7 @@
 # package imports
 import torch
 import torch.nn as nn
+import torch.nn.functional as F 
 
 # Local imports
 from .encodings import get_encoder
@@ -119,7 +120,18 @@ class JointEncoding(nn.Module):
         if white_bkgd:
             rgb_map = rgb_map + (1.-acc_map[...,None])
 
-        return rgb_map, disp_map, acc_map, weights, depth_map, depth_var
+        uncertainty_map = None
+        if raw.shape[-1] == 5:
+            # raw[..., 3] 是不确定性 logits
+            # 使用 Softplus 保证不确定性 > 0
+            uncertainty = F.softplus(raw[..., 3]) 
+            
+            # 积分不确定性: beta(r) = sum(weights * beta_i) + beta_min
+            # 注意：UNIKD 论文公式里还有一个 beta_min，通常在 Loss 计算时加，或者这里加
+            uncertainty_map = torch.sum(weights * uncertainty, -1, keepdim=True) # [N_rays, 1]
+
+
+        return rgb_map, disp_map, acc_map, weights, depth_map, depth_var, uncertainty_map
     
     def query_sdf(self, query_points, return_geo=False, embed=False):
         '''
@@ -203,7 +215,7 @@ class JointEncoding(nn.Module):
         
         pts = rays_o[...,:] + normal[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
         raw = self.run_network(pts)
-        rgb, disp_map, acc_map, weights, depth_map, depth_var = self.raw2outputs(raw, z_vals, self.config['training']['white_bkgd'])
+        rgb, disp_map, acc_map, weights, depth_map, depth_var, _ = self.raw2outputs(raw, z_vals, self.config['training']['white_bkgd'])
         return rgb
     
     def render_rays(self, rays_o, rays_d, target_d=None):
@@ -228,7 +240,9 @@ class JointEncoding(nn.Module):
             else:
                 z_vals = z_samples
         else:
-            z_vals = torch.linspace(self.config['cam']['near'], self.config['cam']['far'], self.config['training']['n_samples']).to(rays_o)
+            # 【修改】使用 .get() 防止 KeyError，默认采样 64 个点
+            n_samples = self.config['training'].get('n_samples', 64)
+            z_vals = torch.linspace(self.config['cam']['near'], self.config['cam']['far'], n_samples).to(rays_o)
             z_vals = z_vals[None, :].repeat(n_rays, 1) # [n_rays, n_samples]
 
         # Perturb sampling depths
@@ -241,7 +255,7 @@ class JointEncoding(nn.Module):
         # Run rendering pipeline
         pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
         raw = self.run_network(pts)
-        rgb_map, disp_map, acc_map, weights, depth_map, depth_var = self.raw2outputs(raw, z_vals, self.config['training']['white_bkgd'])
+        rgb_map, disp_map, acc_map, weights, depth_map, depth_var, uncertainty_map = self.raw2outputs(raw, z_vals, self.config['training']['white_bkgd'])
 
         # Importance sampling
         if self.config['training']['n_importance'] > 0:
@@ -256,12 +270,16 @@ class JointEncoding(nn.Module):
             pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
 
             raw = self.run_network(pts)
-            rgb_map, disp_map, acc_map, weights, depth_map, depth_var = self.raw2outputs(raw, z_vals, self.config['training']['white_bkgd'])
+            rgb_map, disp_map, acc_map, weights, depth_map, depth_var, uncertainty_map = self.raw2outputs(raw, z_vals, self.config['training']['white_bkgd'])
 
         # Return rendering outputs
         ret = {'rgb' : rgb_map, 'depth' :depth_map, 
                'disp_map' : disp_map, 'acc_map' : acc_map, 
                'depth_var':depth_var,}
+
+        if uncertainty_map is not None:
+            ret['uncertainty'] = uncertainty_map
+
         ret = {**ret, 'z_vals': z_vals}
 
         ret['raw'] = raw
@@ -294,6 +312,9 @@ class JointEncoding(nn.Module):
         rend_dict = self.render_rays(rays_o, rays_d, target_d=target_d)
 
         if not self.training:
+            return rend_dict
+        
+        if target_d is None or target_rgb is None:
             return rend_dict
         
         # Get depth and rgb weights for loss

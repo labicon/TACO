@@ -21,10 +21,6 @@
 # # VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
 # # python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose
 
-INPUT_MESH=output/Replica/room1/MAS/agent_0/mesh_track1999.ply
-VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
-nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
-
 # INPUT_MESH=output/Replica/room1/Full_CNM_frames_per_task500_offsurface256_weight0.02_buffer20000_alpha12_near0.05_vnear1.0_vfar0.1/agent_0/mesh_track1999.ply
 # VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
 # nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
@@ -32,3 +28,44 @@ nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPU
 # INPUT_MESH=output/Replica/room1/Full_CNM_frames_per_task500_offsurface256_weight0.02_buffer20000_alpha14_near0.05_vnear1.0_vfar0.1/agent_0/mesh_track1999.ply
 # VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
 # nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+# INPUT_MESH=output/Replica/room1/Ours\(mas\)_2_rho_0.1/agent_0/mesh_track1999.ply
+# VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+# nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+# INPUT_MESH=output/Replica/room1/Ours\(mas\)_2_rho_0.002/agent_0/mesh_track1999.ply
+# VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+# nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+# INPUT_MESH=output/Replica/room1/Ours\(mas\)_2_rho_0.1_frames100/agent_0/mesh_track1999.ply
+# VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+# nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+# INPUT_MESH=output/Replica/room1/Ours\(mas\)_2_rho_0.05/agent_0/mesh_track1999.ply
+# VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+# nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+INPUT_MESH=output/Replica/room1/UNIKD/agent_0/mesh_track1999.ply
+VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+INPUT_MESH=output/Replica/room1/Ours/agent_0/mesh_track1999.ply
+VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+INPUT_MESH=output/Replica/room1/MAS/agent_0/mesh_track1999.ply
+VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+INPUT_MESH=output/Replica/room1/None/agent_0/mesh_track1999.ply
+VIRT_CAM_PATH=eval_data/Replica/room1/virtual_cameras
+nohup python cull_mesh.py --config configs/Replica/room1.yaml --input_mesh $INPUT_MESH --remove_occlusion --virtual_cameras --virt_cam_path $VIRT_CAM_PATH --gt_pose > eval_replica_room1.log 2>&1 &
+
+
+# INPUT_MESH=output/scannet/scene0000_00/Ours\(mas\)_2_rho_0.1_frames15/agent_0/mesh_track5577.ply
+# VIRT_CAM_PATH=eval_data/scannet/scene0000_00/virtual_cameras
+# nohup python cull_mesh.py --config configs/scannet/scene0000.yaml --input_mesh $INPUT_MESH --remove_occlusion --gt_pose > eval_replica_room1.log 2>&1 &
+
+# INPUT_MESH=output/scannet/scene0000_00/Ours\(mas\)_2_rho_0.1_frames20/agent_0/mesh_track5577.ply
+# VIRT_CAM_PATH=eval_data/scannet/scene0000_00/virtual_cameras
+# nohup python cull_mesh.py --config configs/scannet/scene0000.yaml --input_mesh $INPUT_MESH --remove_occlusion --gt_pose > eval_replica_room1.log 2>&1 &

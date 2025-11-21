@@ -18,7 +18,7 @@ training:
   ewc_enabled: False
   ewc_lambda: 0.1
 
-  mas_enabled: True
+  mas_enabled: False
   mas:
     lambda: 0.1           # MAS 正则系数 λ
     frames_per_task: 100  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
@@ -39,20 +39,29 @@ training:
     alpha: 12.0                        # ψ_s 中的 α
     near_threshold: 0.05              # |sdf_old| < 0.05 视为 near-surface
     value_weight_near: 1.0            # near 区域 value consistency 权重
-    value_weight_far: 0.1             # far 区域 value consistency 权重
+    value_weight_far: 0.1             # far 区域 value consistency 权重·、
+
+  unikd_enabled: False  # Set to True to enable
+  unikd:
+    frames_per_task: 20      # Update teacher every 100 frames
+    uncertainty_threshold: 0.05 # Threshold to filter teacher's bad predictions
+    n_random_poses: 20        # Number of random poses to sample per distillation step
+    eta: 0.1                  # Margin parameter in loss
+    beta_min: 0.05            # Minimum uncertainty value
 
   temporal_consensus:
     enabled: False
     K: 1
-    frames_per_task: 1
+    frames_per_task: 10
     inject_every: 1
     gamma: 0.2
+    uncertainty_decay: 1.0
 
 data:
   datadir: data/Replica/room1
   trainskip: 1
   output: output/Replica/room1
-  exp_name: MAS
+  exp_name: None
   load_path: fixed_decoder.pt
 
 
@@ -67,7 +76,7 @@ multi_agents:
   #edges_for_dropout: [ [0,1,0.5], [0,2,0.5], [1,2,0.5] ] # [node i, node j, possibility of dropping out]
   edges_for_dropout: []
   distributed_algorithm: 'AUQ_CADMM'
-  rho: 0.001
+  rho: 0.1
   track_uncertainty: True
   fix_decoder: True
   alpha: 0.9 # DSGD
