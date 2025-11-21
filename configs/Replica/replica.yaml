@@ -77,9 +77,7 @@ training:
   depth_weight: 0.1       # Weight for depth loss / 深度损失权重
   sdf_weight: 1000        # Weight for SDF loss / SDF损失权重
   fs_weight: 10
-  
   uncert_weight: 0.005    # NARUTO uncert_weight
-
   eikonal_weight: 0       # Weight for Eikonal loss / Eikonal损失权重
   smooth_weight: 0.000001 # Weight for smoothness loss / 平滑损失权重
   smooth_pts: 32          # Number of points for smoothness / 平滑点数

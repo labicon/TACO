@@ -37,6 +37,7 @@ from optimization.utils import at_to_transform_matrix, qt_to_transform_matrix, m
 from baselines.CNM import CNMTeacher, CNMOffsurfaceReplay
 from baselines.KR import KRKeyframeReplay
 from baselines.MAS import MAS
+from baselines.EWC import EWC 
 from baselines.UNIKD import UNIKD
 
 import sys
@@ -127,11 +128,10 @@ class Mapping():
 
         # EWC parameters
         self.ewc_enabled = config['training'].get('ewc_enabled', False)
+        self.ewc_enabled = config['training'].get('ewc_enabled', False)
         if self.ewc_enabled:
-            self.ewc_lambda = config['training']['ewc_lambda']
-            self.fisher_matrix = None
-            self.optimal_params = None
-            print(f"Agent {self.agent_id} has EWC enabled with lambda={self.ewc_lambda}")
+            ewc_cfg = self.config # EWC config is usually mixed in training
+            self.ewc = EWC(self, ewc_cfg)
 
 
         # --- CNM: Continual Neural Mapping 基线 ---
@@ -534,88 +534,6 @@ class Mapping():
         
         print(f'Agent {self.agent_id} First frame mapping done')
         return ret, loss
-
-
-    def ewc_loss(self):
-        '''
-        Calculate the EWC regularization loss.
-        '''
-        if self.fisher_matrix is None or self.optimal_params is None:
-            return torch.tensor(0.0).to(self.device)
-        
-        loss = 0.0
-        for name, param in self.model.named_parameters():
-            if name in self.fisher_matrix:
-                fisher = self.fisher_matrix[name]
-                optimal = self.optimal_params[name]
-                loss += (fisher * (param - optimal).pow(2)).sum()
-        
-        return self.ewc_lambda * loss
-
-    def compute_fisher_matrix(self):
-        '''
-        Compute the Fisher Information Matrix for EWC using keyframes in the database.
-        '''
-        self.model.train() # Set model to training mode to get gradients
-        
-        self.fisher_matrix = {name: torch.zeros_like(p) for name, p in self.model.named_parameters() if p.requires_grad}
-        
-        # Use a subset of keyframes to estimate the Fisher matrix
-        num_samples = 0
-        
-        # Sample rays from keyframe database
-        rays, _ = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'] * len(self.keyframeDatabase.frame_ids))
-        
-        if rays.shape[0] == 0:
-            return
-
-        # Process in batches to avoid memory issues
-        batch_size = self.config['mapping']['sample']
-        for i in range(0, rays.shape[0], batch_size):
-            self.map_optimizer.zero_grad()
-            
-            ray_batch = rays[i:i+batch_size]
-            rays_d_cam = ray_batch[..., :3].to(self.device)
-            target_s = ray_batch[..., 3:6].to(self.device)
-            target_d = ray_batch[..., 6:7].to(self.device)
-            
-            # For simplicity, we assume rays are in world coordinates.
-            # This part might need adjustment based on how rays are stored.
-            # Here, assuming rays_o and rays_d are directly available or can be computed.
-            # This is a simplification. In a real scenario, you'd need to get poses.
-            # Let's assume we get rays_o from the keyframe's c2w pose.
-            # This part of the code is complex because it requires poses.
-            # For now, let's use a placeholder logic.
-            
-            # A proper implementation would require sampling poses along with rays.
-            # The current KeyFrameDatabase.sample_global_rays doesn't return poses.
-            # Let's assume we can get the poses.
-            
-            # This is a placeholder. A full implementation would need to fetch poses for the sampled rays.
-            # For now, we will just use the first keyframe's pose as an approximation.
-            if len(self.est_c2w_data) > 0:
-                c2w = next(iter(self.est_c2w_data.values()))
-                rays_o = c2w[None, :3, -1].repeat(ray_batch.shape[0], 1)
-                rays_d = torch.sum(rays_d_cam[..., None, :] * c2w[:3, :3], -1)
-
-                ret = self.model.forward(rays_o, rays_d, target_s, target_d)
-                loss = self.get_loss_from_ret(ret, sdf=False, fs=False) # Focus on RGB-D loss for Fisher
-                loss.backward()
-
-                for name, param in self.model.named_parameters():
-                    if param.grad is not None:
-                        self.fisher_matrix[name] += param.grad.data.pow(2)
-                
-                num_samples += 1
-
-        if num_samples > 0:
-            for name in self.fisher_matrix:
-                self.fisher_matrix[name] /= num_samples
-        
-        self.optimal_params = {name: p.clone().detach() for name, p in self.model.named_parameters() if p.requires_grad}
-        print(f"Agent {self.agent_id}: Fisher matrix and optimal parameters updated.")
-        self.model.zero_grad()
-
 
     def smoothness(self, sample_points=256, voxel_size=0.1, margin=0.05, color=False):
         '''
@@ -1125,7 +1043,7 @@ class Mapping():
 
                 # Add EWC loss if enabled
                 if self.ewc_enabled:
-                    loss += self.ewc_loss()
+                    loss += self.ewc.compute_loss()
 
                 # --- CNM: off-surface function replay loss ---
                 if getattr(self, 'cnm_enabled', False):
@@ -1299,7 +1217,7 @@ class Mapping():
                     self.kr_replay.register_keyframe(i)
             #print(f'\nAgent {self.agent_id} add keyframe:{i}')
             if self.ewc_enabled:
-                self.compute_fisher_matrix()
+                self.ewc.update_fisher_with_batch(batch)
 
         # --- 【新增】UNIKD 在任务边界更新 Teacher ---
         if self.unikd_enabled:

@@ -16,7 +16,7 @@ mesh:
 training:
 
   ewc_enabled: False
-  ewc_lambda: 0.1
+  ewc_lambda: 1
 
   mas_enabled: False
   mas:
@@ -50,7 +50,7 @@ training:
     beta_min: 0.05            # Minimum uncertainty value
 
   temporal_consensus:
-    enabled: False
+    enabled: True
     K: 1
     frames_per_task: 10
     inject_every: 1
@@ -61,7 +61,7 @@ data:
   datadir: data/Replica/room1
   trainskip: 1
   output: output/Replica/room1
-  exp_name: None
+  exp_name: Ours
   load_path: fixed_decoder.pt
 
 

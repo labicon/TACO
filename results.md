@@ -288,7 +288,6 @@ F1@5cm: 88.58
 
 
 
-
 On room1
 CADMM
 accuracy: 4.65
@@ -306,7 +305,6 @@ CD: 2.34
 precision@5cm: 90.31
 F1@5cm: 92.58
 
-
 Normal
 accuracy: 1.79
 completion: 1.74
@@ -314,6 +312,14 @@ completion ratio: 95.64
 CD: 1.76
 precision@5cm: 94.47
 F1@5cm: 95.05
+
+EWC
+accuracy: 29.73
+completion: 7.70
+completion ratio: 65.20
+CD: 18.72
+precision@5cm: 32.25
+F1@5cm: 43.16
 
 MAS
 accuracy: 2.91
@@ -323,13 +329,20 @@ CD: 2.35
 precision@5cm: 90.30
 F1@5cm: 92.58
 
+accuracy: 1.90
+completion: 1.78
+completion ratio: 95.41
+CD: 1.84
+precision@5cm: 93.94
+F1@5cm: 94.67
+
 UNIKD
-accuracy: 5.02
-completion: 2.20
-completion ratio: 94.06
-CD: 3.61
-precision@5cm: 85.73
-F1@5cm: 89.70
+accuracy: 5.22
+completion: 2.04
+completion ratio: 94.69
+CD: 3.63
+precision@5cm: 84.77
+F1@5cm: 89.46
 
 KR
 accuracy: 8.97
@@ -348,10 +361,9 @@ precision@5cm: 80.83
 F1@5cm: 86.41
 
 None
-accuracy: 39.78
-completion: 9.55
-completion ratio: 58.17
-CD: 24.67
-precision@5cm: 28.51
-F1@5cm: 38.27
-
+accuracy: 33.74
+completion: 8.91
+completion ratio: 60.31
+CD: 21.32
+precision@5cm: 30.26
+F1@5cm: 40.30

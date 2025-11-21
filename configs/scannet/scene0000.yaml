@@ -16,7 +16,7 @@ training:
   ewc_enabled: False
   ewc_lambda: 0.1
 
-  mas_enabled: False
+  mas_enabled: True
   mas:
     lambda: 1           # MAS 正则系数 λ
     frames_per_task: 100  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
@@ -40,9 +40,17 @@ training:
     value_weight_near: 1.0            # near 区域 value consistency 权重
     value_weight_far: 0.1             # far 区域 value consistency 权重
 
+  unikd_enabled: False  # Set to True to enable
+  unikd:
+    frames_per_task: 20      # Update teacher every 100 frames
+    uncertainty_threshold: 0.05 # Threshold to filter teacher's bad predictions
+    n_random_poses: 20        # Number of random poses to sample per distillation step
+    eta: 0.1                  # Margin parameter in loss
+    beta_min: 0.05            # Minimum uncertainty value
+
 
   temporal_consensus:
-    enabled: True
+    enabled: False
     K: 1
     frames_per_task: 10
     inject_every: 1
@@ -58,7 +66,7 @@ data:
   datadir: data/scannet/scene0000_00
   trainskip: 1
   output: output/scannet/scene0000_00
-  exp_name: Ours(mas)_2_rho_0.1_frames15
+  exp_name: MAS
   load_path: fixed_decoder.pt
 
 tracking:
