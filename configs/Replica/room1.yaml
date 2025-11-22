@@ -23,6 +23,11 @@ training:
     lambda: 0.1           # MAS 正则系数 λ
     frames_per_task: 100  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
 
+  mas_original_enabled: True
+  mas_original:
+    lambda: 0.1           # 正则化系数
+    frames_per_task: 100  # 多少帧触发一次离线计算
+    buffer_size: 10       # Replay Buffer 大小 (每个任务最多存多少帧)
 
   kr_enabled: False 
   kr:
@@ -50,18 +55,18 @@ training:
     beta_min: 0.05            # Minimum uncertainty value
 
   temporal_consensus:
-    enabled: True
+    enabled: False
     K: 1
-    frames_per_task: 10
+    frames_per_task: 1
     inject_every: 1
-    gamma: 0.2
-    uncertainty_decay: 1.0
+    gamma: 0.1
+    uncertainty_decay: 1
 
 data:
   datadir: data/Replica/room1
   trainskip: 1
   output: output/Replica/room1
-  exp_name: Ours
+  exp_name: MAS_original
   load_path: fixed_decoder.pt
 
 

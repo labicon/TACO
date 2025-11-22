@@ -37,6 +37,7 @@ from optimization.utils import at_to_transform_matrix, qt_to_transform_matrix, m
 from baselines.CNM import CNMTeacher, CNMOffsurfaceReplay
 from baselines.KR import KRKeyframeReplay
 from baselines.MAS import MAS
+from baselines.MAS_original import MAS_original
 from baselines.EWC import EWC 
 from baselines.UNIKD import UNIKD
 
@@ -168,6 +169,14 @@ class Mapping():
             mas_lambda = mas_cfg.get('lambda', 1.0)
             self.mas = MAS(self, lam=mas_lambda)
             print(f"Agent {self.agent_id} has MAS enabled with lambda={mas_lambda}.")
+
+         # --- 【新增】MAS Original: Offline/Post-hoc baseline ---
+        self.mas_original_enabled = self.config['training'].get('mas_original_enabled', False)
+        if self.mas_original_enabled:
+            mas_orig_cfg = self.config['training'].get('mas_original', {})
+            self.mas_original = MAS_original(self, mas_orig_cfg)
+            print(f"Agent {self.agent_id} has MAS_original (Offline) enabled.")
+            
 
         # --- 【新增】UNIKD 初始化 ---
         self.unikd_enabled = self.config['training'].get('unikd_enabled', False)
@@ -1014,17 +1023,7 @@ class Mapping():
                         if grid_grad is not None:
                             # 获取幅度
                             grad_mag = torch.abs(grid_grad)
-                            
-                            # 改进点 2: 调整衰减策略
-                            # MAS 是累加不衰减的。为了模拟 MAS，我们应该调大 decay 或者不衰减
-                            # 如果 decay < 1.0，结构信息会随时间流失
-                            # 建议：对于结构梯度，使用 max() 或者 极慢的 decay (0.999)
-                            
-                            # 方案 A: 累加 (像 MAS 一样) -> W 会越来越大，越来越硬
-                            # self.uncertainty_tensor += grad_mag 
-                            
-                            # 方案 B: 滑动平均 (保持动态性) -> 推荐
-                            self.uncertainty_tensor *= self.uncert_decay 
+                            self.uncertainty_tensor*= self.uncert_decay
                             self.uncertainty_tensor += grad_mag 
                             
                     # 5. 清空梯度，准备计算真正的 Loss
@@ -1053,6 +1052,10 @@ class Mapping():
                 # --- MAS loss: parameter importance regularization ---
                 if getattr(self, 'mas_enabled', False):
                     loss += self.mas.mas_loss()
+
+                # --- MAS Original (Offline) loss ---
+                if getattr(self, 'mas_original_enabled', False):
+                    loss += self.mas_original.mas_loss()
 
                 loss.backward(retain_graph=True)
                 mean_obj_loss += loss.item() #item() method extracts the loss’s value as a Python float.
@@ -1219,6 +1222,11 @@ class Mapping():
             if self.ewc_enabled:
                 self.ewc.update_fisher_with_batch(batch)
 
+        # --- 【新增】MAS Original: 将当前帧加入 Buffer ---
+        # 注意：这里只存数据，不计算梯度
+        if getattr(self, 'mas_original_enabled', False):
+            self.mas_original.add_to_buffer(batch)
+
         # --- 【新增】UNIKD 在任务边界更新 Teacher ---
         if self.unikd_enabled:
             unikd_cfg = self.config['training'].get('unikd', {})
@@ -1251,6 +1259,14 @@ class Mapping():
             if i > 0 and (i % frames_per_task_mas) == 0:
                 print(f"Agent {self.agent_id}: MAS finalize importance at frame {i}")
                 self.mas.finalize_importance()
+
+        # --- 【新增】MAS Original: 在任务边界离线计算重要性 (Offline) ---
+        if getattr(self, 'mas_original_enabled', False):
+            mas_orig_cfg = self.config['training'].get('mas_original', {})
+            frames_per_task_orig = mas_orig_cfg.get('frames_per_task', 100)
+            if i > 0 and (i % frames_per_task_orig) == 0:
+                # 触发离线计算：遍历 Buffer -> 算梯度 -> 更新 Omega -> 清空 Buffer
+                self.mas_original.calculate_importance()
 
         if i % self.config['mesh']['vis']==0:
             self.save_mesh(i, voxel_size=self.config['mesh']['voxel_eval'])
