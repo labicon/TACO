@@ -152,13 +152,45 @@ CD: 28.51
 precision@5cm: 41.12
 F1@5cm: 42.70
 
-Ours
-accuracy: 6.37
-completion: 3.59
-completion ratio: 88.78
-CD: 4.98
-precision@5cm: 83.14
-F1@5cm: 85.87
+Ours(MAS loss + 100 + rho0.01 + mask1e-4)
+accuracy: 2.73
+completion: 2.91
+completion ratio: 93.20
+CD: 2.82
+precision@5cm: 91.30
+F1@5cm: 92.24
+
+Ours(MAS loss + 10 + rho0.01 + mask1e-4 + gamma0.1)
+accuracy: 3.15
+completion: 2.78
+completion ratio: 94.14
+CD: 2.97
+precision@5cm: 90.65
+F1@5cm: 92.36
+
+Ours(MAS loss + 100 + rho0.01 + mask1e-4 + gamma0.1)
+accuracy: 3.84
+completion: 3.21
+completion ratio: 89.21
+CD: 3.53
+precision@5cm: 85.23
+F1@5cm: 87.17
+
+MAS_frames100
+accuracy: 2.51
+completion: 2.81
+completion ratio: 94.33
+CD: 2.66
+precision@5cm: 92.76
+F1@5cm: 93.54
+
+MAS_frames10
+accuracy: 2.39
+completion: 2.68
+completion ratio: 94.32
+CD: 2.53
+precision@5cm: 93.93
+F1@5cm: 94.12
 
 Ours after MAS loss 10
 accuracy: 2.97
@@ -167,6 +199,14 @@ completion ratio: 92.94
 CD: 2.93
 precision@5cm: 90.73
 F1@5cm: 91.82
+
+Ours masked
+accuracy: 2.57
+completion: 2.91
+completion ratio: 92.83
+CD: 2.74
+precision@5cm: 91.43
+F1@5cm: 92.13
 
 Ours after MAS loss 15
 accuracy: 3.14
@@ -191,14 +231,6 @@ completion ratio: 87.31
 CD: 5.60
 precision@5cm: 80.20
 F1@5cm: 83.60
-
-MAS
-accuracy: 3.40
-completion: 3.03
-completion ratio: 90.87
-CD: 3.22
-precision@5cm: 86.92
-F1@5cm: 88.85
 
 CNM
 accuracy: 31.00
@@ -305,6 +337,126 @@ CD: 2.34
 precision@5cm: 90.31
 F1@5cm: 92.58
 
+Ours (masked) rho 0.5  gamma0.2
+accuracy: 2.40
+completion: 1.90
+completion ratio: 94.29
+CD: 2.15
+precision@5cm: 91.53
+F1@5cm: 92.89
+
+Ours (masked) rho 0.2  gamma0.2
+accuracy: 2.21
+completion: 1.91
+completion ratio: 94.41
+CD: 2.06
+precision@5cm: 92.72
+F1@5cm: 93.56
+
+Ours (masked) rho 0.1  gamma0.3
+accuracy: 2.15
+completion: 1.91
+completion ratio: 94.47
+CD: 2.03
+precision@5cm: 92.97
+F1@5cm: 93.71
+
+Ours (masked) rho 0.1  gamma0.2
+accuracy: 2.07
+completion: 1.92
+completion ratio: 94.37
+CD: 2.00
+precision@5cm: 93.29
+F1@5cm: 93.83
+
+Ours (masked) rho 0.1  gamma0.18
+accuracy: 2.00
+completion: 1.92
+completion ratio: 94.39
+CD: 1.96
+precision@5cm: 93.76
+F1@5cm: 94.08
+
+Ours (masked) rho 0.1  gamma0.15
+accuracy: 1.93
+completion: 1.93
+completion ratio: 94.33
+CD: 1.93
+precision@5cm: 94.12
+F1@5cm: 94.23
+
+Ours (masked) rho 0.1  gamma0.13
+accuracy: 2.03
+completion: 1.93
+completion ratio: 94.47
+CD: 1.98
+precision@5cm: 93.60
+F1@5cm: 94.03
+
+Ours (masked) rho 0.1  gamma0.12
+accuracy: 1.92
+completion: 1.93
+completion ratio: 94.52
+CD: 1.92
+precision@5cm: 94.30
+F1@5cm: 94.41
+
+Ours (masked) rho 0.1  gamma0.11
+accuracy: 2.03
+completion: 1.93
+completion ratio: 94.47
+CD: 1.98
+precision@5cm: 93.60
+F1@5cm: 94.03
+
+Ours (masked) rho 0.1  gamma0.1
+accuracy: 1.98
+completion: 1.96
+completion ratio: 94.38
+CD: 1.97
+precision@5cm: 94.00
+F1@5cm: 94.19
+
+Ours (masked) rho 0.1  gamma0.15
+accuracy: 1.93
+completion: 1.93
+completion ratio: 94.33
+CD: 1.93
+precision@5cm: 94.12
+F1@5cm: 94.23
+
+Ours (masked) rho 0.08  gamma0.15
+accuracy: 2.09
+completion: 1.93
+completion ratio: 94.45
+CD: 2.01
+precision@5cm: 93.19
+F1@5cm: 93.82
+
+Ours (masked) rho 0.12  gamma0.15
+accuracy: 2.04
+completion: 1.90
+completion ratio: 94.56
+CD: 1.97
+precision@5cm: 93.46
+F1@5cm: 94.01
+
+Ours (masked) rho 1  gamma0.2
+accuracy: 2.53
+completion: 1.92
+completion ratio: 94.07
+CD: 2.22
+precision@5cm: 90.85
+F1@5cm: 92.43
+
+Ours (masked) rho 1 gamma1
+accuracy: 7.71
+completion: 2.28
+completion ratio: 92.71
+CD: 5.00
+precision@5cm: 85.19
+F1@5cm: 88.79
+
 Normal
 accuracy: 1.79
 completion: 1.74
@@ -329,12 +481,29 @@ CD: 2.35
 precision@5cm: 90.30
 F1@5cm: 92.58
 
+MAS_online
 accuracy: 1.90
 completion: 1.78
 completion ratio: 95.41
 CD: 1.84
 precision@5cm: 93.94
 F1@5cm: 94.67
+
+Ours
+accuracy: 1.88
+completion: 1.94
+completion ratio: 94.43
+CD: 1.91
+precision@5cm: 94.40
+F1@5cm: 94.42
+
+MAS 0.001
+accuracy: 2.08
+completion: 1.92
+completion ratio: 94.46
+CD: 2.00
+precision@5cm: 93.26
+F1@5cm: 93.85
 
 UNIKD
 accuracy: 5.22
@@ -367,3 +536,157 @@ completion ratio: 60.31
 CD: 21.32
 precision@5cm: 30.26
 F1@5cm: 40.30
+
+
+
+Ours mask 1e-3
+accuracy: 1.99
+completion: 1.88
+completion ratio: 94.79
+CD: 1.94
+precision@5cm: 93.50
+F1@5cm: 94.14
+
+Ours mask 1e-4
+accuracy: 1.88
+completion: 1.94
+completion ratio: 94.43
+CD: 1.91
+precision@5cm: 94.40
+F1@5cm: 94.42
+
+Ours mask 1e-5
+accuracy: 2.00
+completion: 1.90
+completion ratio: 94.60
+CD: 1.95
+precision@5cm: 93.96
+F1@5cm: 94.28
+
+Ours mask 1e-6
+accuracy: 1.92
+completion: 1.93
+completion ratio: 94.52
+CD: 1.92
+precision@5cm: 94.30
+F1@5cm: 94.41
+
+Ours mask 1e-4 rho0.08
+accuracy: 1.93
+completion: 1.95
+completion ratio: 94.56
+CD: 1.94
+precision@5cm: 94.13
+F1@5cm: 94.34
+
+Ours mask 1e-4 rho0.09
+accuracy: 1.92
+completion: 1.95
+completion ratio: 94.50
+CD: 1.93
+precision@5cm: 94.21
+F1@5cm: 94.36
+
+Ours mask 1e-4 rho0.12
+accuracy: 1.89
+completion: 1.92
+completion ratio: 94.59
+CD: 1.91
+precision@5cm: 94.28
+F1@5cm: 94.44
+
+Ours frames100
+accuracy: 2.12
+completion: 1.83
+completion ratio: 95.03
+CD: 1.98
+precision@5cm: 92.76
+F1@5cm: 93.88
+
+MAS_frame1
+accuracy: 2.11
+completion: 1.79
+completion ratio: 95.55
+CD: 1.95
+precision@5cm: 92.89
+F1@5cm: 94.20
+
+MAS_frame10
+accuracy: 2.01
+completion: 1.80
+completion ratio: 95.34
+CD: 1.91
+precision@5cm: 93.22
+F1@5cm: 94.27
+
+MAS(100)
+accuracy: 1.90
+completion: 1.78
+completion ratio: 95.41
+CD: 1.84
+precision@5cm: 93.94
+F1@5cm: 94.67
+
+Normal
+accuracy: 1.79
+completion: 1.74
+completion ratio: 95.64
+CD: 1.76
+precision@5cm: 94.47
+F1@5cm: 95.05
+
+Ours new scale rho 0.01
+accuracy: 1.85
+completion: 1.78
+completion ratio: 95.20
+CD: 1.81
+precision@5cm: 94.15
+F1@5cm: 94.67
+
+Ours new scale rho 0.01 frame 10
+accuracy: 3.07
+completion: 2.24
+completion ratio: 94.69
+CD: 2.65
+precision@5cm: 88.32
+F1@5cm: 91.40
+
+Ours new scale rho 0.01 frame 10 gamma 0.1
+accuracy: 2.38
+completion: 1.98
+completion ratio: 94.97
+CD: 2.18
+precision@5cm: 92.20
+F1@5cm: 93.56
+
+Ours new scale rho 0.01 frame 100 gamma 0.12
+accuracy: 2.53
+completion: 1.92
+completion ratio: 94.92
+CD: 2.23
+precision@5cm: 90.46
+F1@5cm: 92.64
+
+Ours new scale rho 0.01 frame 100 gamma 0.1
+accuracy: 2.31
+completion: 1.92
+completion ratio: 94.85
+CD: 2.11
+precision@5cm: 92.14
+F1@5cm: 93.48
+
+Ours new scale rho 0.01 frame 100 gamma 0.02
+accuracy: 2.17
+completion: 1.91
+completion ratio: 94.79
+CD: 2.04
+precision@5cm: 92.63
+F1@5cm: 93.70
+
+Ours new scale rho 0.01 frame 100 gamma 0.06
+accuracy: 2.27
+completion: 1.87
+completion ratio: 94.93
+CD: 2.07
+precision@5cm: 92.02
+F1@5cm: 93.45

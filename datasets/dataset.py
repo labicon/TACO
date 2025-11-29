@@ -35,6 +35,9 @@ def get_dataset(config):
     elif config['dataset'] == 'realsense':
         dataset = RealsenseDataset
 
+    elif config['dataset'] == 'bonn':
+        dataset = BonnDataset
+
     
     return dataset(config, 
                    config['data']['datadir'], 
@@ -195,7 +198,8 @@ class ReplicaDataset(BaseDataset):
         self.translation = translation
         self.sc_factor = sc_factor
         self.crop = crop
-        self.img_files = sorted(glob.glob(f'{self.basedir}/results/frame*.jpg'))
+        self.img_files = sorted(glob.glob(f'{self.basedir}/results/frame*.jpg') + 
+                                glob.glob(f'{self.basedir}/results/frame*.png'))
         self.depth_paths = sorted(
             glob.glob(f'{self.basedir}/results/depth*.png'))
         self.load_poses(os.path.join(self.basedir, 'traj.txt'))
@@ -673,9 +677,9 @@ class TUMDataset(BaseDataset):
     def parse_list(self, filepath, skiprows=0):
         """ read list data """
         data = np.loadtxt(filepath, delimiter=' ',
-                          dtype=np.unicode_, skiprows=skiprows)
+                          dtype=np.str_, skiprows=skiprows) # 修改这里：np.unicode_ -> np.str_
         return data
-
+    
     def loadtum(self, datapath, frame_rate=-1):
         """ read video data in tum-rgbd format """
         if os.path.isfile(os.path.join(datapath, 'groundtruth.txt')):
@@ -901,3 +905,16 @@ class RealsenseDataset(BaseDataset):
                 c2w = self.align_mat
                 c2w = torch.from_numpy(c2w).float()
                 self.poses.append(c2w)
+
+
+class BonnDataset(TUMDataset):
+    """
+    Dataset class for RGB-D Bonn dataset.
+    The format is identical to TUM dataset (rgb.txt, depth.txt, groundtruth.txt),
+    so we inherit from TUMDataset directly.
+    """
+    def __init__(self, cfg, basedir, align=True, trainskip=1, 
+                 downsample_factor=1, translation=0.0, 
+                 sc_factor=1., crop=0, load=True):
+        super(BonnDataset, self).__init__(cfg, basedir, align, trainskip, 
+                 downsample_factor, translation, sc_factor, crop, load)

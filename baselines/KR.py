@@ -1,156 +1,163 @@
-
-from typing import List, Tuple, Optional
-import random
 import torch
+import random
+from typing import List, Dict, Tuple
 
 class KRKeyframeReplay:
     """
-    KR baseline: keyframe replay of last K keyframes, following iMAP-style replay.
-
-    - 不修改原来的 KeyFrameDatabase 结构；
-    - 只是在外面维护一个“最近 K 个 keyframe 的 frame_id 列表”，
-      并在 global_BA 中额外采样这些 KF 的射线，形成一个附加 loss。
+    Standalone KR baseline:
+    维护一个独立的 Replay Buffer。
+    - save_every: 每隔多少帧保存一次 (Interval)
+    - buffer_size: Buffer 最大容量 (Max Size)
+    - 淘汰策略: 当 Buffer 满时，计算所有帧的重建 Loss，淘汰 Loss 最低（模型最熟悉）的一帧。
     """
 
-    def __init__(self, mapping, K: int = 10):
-        """
-        Args:
-            mapping: Mapping 实例（包含 keyframeDatabase, config 等）
-            K:      最多保留的关键帧个数（默认 10）
-        """
+    def __init__(self, mapping, buffer_size: int = 10, save_every: int = 50):
         self.mapping = mapping
         self.device = mapping.device
-        self.K = K
-        # 存储最近 K 个 keyframe 的 frame_id（对应 keyframeDatabase.frame_ids 的元素）
-        self.replay_kf_ids: List[int] = []
+        self.buffer_size = buffer_size
+        self.save_every = save_every
+        
+        # 独立 Buffer：存储字典列表 [{'rgb':..., 'depth':..., 'frame_id':...}, ...]
+        # 数据存储在 CPU 上以节省显存
+        self.buffer: List[Dict] = [] 
 
-    def register_keyframe(self, frame_id: int):
+    def _compute_frame_loss(self, frame_data: Dict, num_samples: int = 1024) -> float:
         """
-        在每次 add_keyframe 时调用，用于维护“最近 K 个 keyframe”的列表。
-        frame_id: 当前被加入 keyframeDatabase 的帧 id
+        计算单帧的重建误差 (RGB + Depth)。
+        为了速度，只采样 num_samples 条射线。
         """
-        self.replay_kf_ids.append(frame_id)
-        # 只保留最近 K 个
-        if len(self.replay_kf_ids) > self.K:
-            self.replay_kf_ids = self.replay_kf_ids[-self.K:]
+        frame_id = frame_data['frame_id']
+        
+        # 1. 获取 Pose (从 mapping 中获取当前估计的 Pose)
+        # 注意：est_c2w_data 存储在 GPU 上
+        if frame_id not in self.mapping.est_c2w_data:
+            # 极端情况：如果 Pose 还没存（不太可能），返回 0 让其被淘汰
+            return 0.0
+        
+        c2w = self.mapping.est_c2w_data[frame_id].to(self.device)
 
-    def _sample_rays_from_kfs(self, num_rays: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        从最近 K 个 keyframe 中采样 num_rays 条射线。
-        返回:
-            rays: (N, 7) = [dir, rgb, depth]
-            ids:  (N,)   = 对应的 frame_id（原始帧 id）
-        若 keyframe 不足，则返回空 tensor。
-        """
-        kf_db = self.mapping.keyframeDatabase
-        if len(self.replay_kf_ids) == 0 or len(kf_db.frame_ids) == 0:
-            return torch.empty(0, 7), torch.empty(0, dtype=torch.long)
+        # 2. 随机采样像素
+        H, W, _ = frame_data['rgb'].shape[1:] # [1, H, W, 3]
+        indices = torch.randint(0, H * W, (num_samples,))
+        h_idx = indices // W
+        w_idx = indices % W
 
-        # 收集这些 KF 在数据库里的下标
-        # keyframeDatabase.frame_ids 存的是所有 KF 对应的 frame_id
-        # 我们只关心 replay_kf_ids 这个子集
-        candidate_indices = []
-        for idx, fid in enumerate(kf_db.frame_ids):
-            if fid in self.replay_kf_ids:
-                candidate_indices.append(idx)
-        if len(candidate_indices) == 0:
-            return torch.empty(0, 7), torch.empty(0, dtype=torch.long)
+        # 3. 准备数据 (CPU -> GPU)
+        target_rgb = frame_data['rgb'][0, h_idx, w_idx, :].to(self.device)
+        target_depth = frame_data['depth'][0, h_idx, w_idx].to(self.device).unsqueeze(-1)
+        directions = frame_data['direction'][0, h_idx, w_idx, :].to(self.device)
 
-        # 简单做法：从这些 candidate KF 里 sample rays
-        # KeyFrameDatabase 目前只支持 global sampling，我们这里复用它：
-        rays, ids = kf_db.sample_global_rays(num_rays)
-        # ids 是 KF 索引，我们需要把它映射回 frame_id
-        if rays.shape[0] == 0:
-            return rays, ids
+        # 4. 转换射线 (Camera -> World)
+        # rays_o: [N, 3]
+        rays_o = c2w[None, :3, -1].repeat(num_samples, 1)
+        # rays_d: [N, 3]
+        rays_d = torch.sum(directions[..., None, :] * c2w[:3, :3], -1)
 
-        # 过滤掉不在 replay_kf_ids 中的射线
-        kf_indices = ids.tolist()
-        keep_mask = [kf_db.frame_ids[kid] in self.replay_kf_ids for kid in kf_indices]
-        keep_mask = torch.tensor(keep_mask, dtype=torch.bool)
-        rays = rays[keep_mask]
-        ids = ids[keep_mask]
-        # 映射 ids -> frame_id（真实帧 id）
-        if rays.shape[0] > 0:
-            frame_ids = torch.tensor([kf_db.frame_ids[int(k)] for k in ids], dtype=torch.long)
-        else:
-            frame_ids = torch.empty(0, dtype=torch.long)
-        return rays, frame_ids
+        # 5. 前向传播 (No Grad, Eval Mode 逻辑)
+        with torch.no_grad():
+            # 调用模型 forward
+            ret = self.mapping.model(rays_o, rays_d, target_rgb, target_depth)
+        
+        # 6. 计算 Loss (L1 Loss)
+        loss_rgb = torch.abs(ret['rgb'] - target_rgb).mean()
+        loss_depth = torch.abs(ret['depth'] - target_depth).mean()
+        
+        total_loss = loss_rgb + loss_depth
+        return total_loss.item()
 
-    def sample_rays(self, num_rays: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def add_frame(self, batch, frame_id: int):
         """
-        对外接口：从 KR 的最近 K 个 keyframe 中采样射线。
+        尝试将当前帧添加到 KR 的独立 Buffer 中。
         """
-        return self._sample_rays_from_kfs(num_rays)
+        # 1. 间隔检查 (Interval Check)
+        if frame_id % self.save_every != 0:
+            return
+
+        # 2. 关键帧对齐检查
+        kf_every = self.mapping.config['mapping']['keyframe_every']
+        if frame_id % kf_every != 0:
+            return 
+
+        # 3. 提取数据并转存到 CPU
+        frame_data = {
+            'rgb': batch['rgb'].detach().cpu(),
+            'depth': batch['depth'].detach().cpu(),
+            'direction': batch['direction'].detach().cpu(),
+            'frame_id': frame_id
+        }
+        
+        # 4. 容量检查与淘汰机制
+        if len(self.buffer) >= self.buffer_size:
+            # Buffer 已满，寻找 Loss 最小的帧进行淘汰
+            min_loss = float('inf')
+            remove_idx = -1
+            
+            # print(f"KR Buffer Full ({len(self.buffer)}), evaluating losses for eviction...")
+            
+            for i, existing_frame in enumerate(self.buffer):
+                loss = self._compute_frame_loss(existing_frame)
+                if loss < min_loss:
+                    min_loss = loss
+                    remove_idx = i
+            
+            if remove_idx != -1:
+                # print(f"KR Eviction: Removing frame {self.buffer[remove_idx]['frame_id']} (Loss: {min_loss:.4f})")
+                self.buffer.pop(remove_idx)
+            else:
+                # 理论上不应发生，如果发生则回退到 FIFO
+                self.buffer.pop(0)
+
+        # 5. 加入新帧
+        self.buffer.append(frame_data)
 
     def sample_replay_rays(self, num_rays_total: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        兼容 Mapping.global_BA 中调用的接口。
-        与 sample_rays 功能相同，但直接返回 (rays, pose_ids)，
-        方便在 global_BA 里拼 poses_all 索引。
-
-        Args:
-            num_rays_total: 需要从最近 K 个 KF 中采样的总射线数量
-
-        Returns:
-            rays: [N, 7]
-            ids_pose: [N]，对应 poses_all 的索引（通过 frame_id // keyframe_every 得到）
+        从 Buffer 中随机采样射线。
         """
-        rays, frame_ids = self.sample_rays(num_rays_total)
-        if rays.shape[0] == 0:
-            return rays, torch.empty(0, dtype=torch.long)
+        if len(self.buffer) == 0:
+            return torch.empty(0, 7).to(self.device), torch.empty(0, dtype=torch.long).to(self.device)
 
-        keyframe_every = self.mapping.config['mapping']['keyframe_every']
-        ids_pose = (frame_ids // keyframe_every).clamp(min=0)
-        return rays, ids_pose.to(torch.long)
+        rays_list = []
+        ids_list = []
+        
+        # 简单的均匀采样策略
+        num_rays_per_frame = max(1, num_rays_total // len(self.buffer))
+        kf_every = self.mapping.config['mapping']['keyframe_every']
 
-    def compute_loss(
-        self,
-        poses_all: torch.Tensor,
-        base_rays: torch.Tensor,
-        base_ids_all: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        计算 KR 的额外 loss。
-        思路：
-            - 从最近 K 个 KF 中额外采样一批 rays；
-            - 用同样的 model.forward 计算 loss；
-            - 将这部分 loss 作为 regularizer 返回。
-        参数:
-            poses_all: (N_pose, 4,4) BA 中用到的所有 pose（和 global_BA 里一致）
-            base_rays: (N0, 7) 当前 BA 已经组装好的 rays（方向、RGB、深度）
-            base_ids_all: (N0,) 与 base_rays 对应的 pose index（已经是 [0..N_pose) 的索引）
-        返回:
-            kr_loss: 一个标量张量，可直接加到总 loss 上。
-        """
-        # 从 KR keyframes 中取一批射线
-        kr_cfg = self.mapping.config['training'].get('kr', {})
-        kr_num = kr_cfg.get('num_replay_rays', 256)
-        rays_kr, frame_ids_kr = self.sample_rays(kr_num)
-        if rays_kr.shape[0] == 0:
-            return torch.tensor(0.0, device=self.device)
+        current_count = 0
+        buffer_indices = list(range(len(self.buffer)))
+        random.shuffle(buffer_indices)
 
-        rays_kr = rays_kr.to(self.device)
-        # frame_ids_kr 是原始帧 id，需要映射到 poses_all 的索引
-        # global_BA 中 poses_all 的构成是：所有 KF pose + 当前帧 pose
-        # 假设所有 KF pose 的顺序是 0, keyframe_every, 2*keyframe_every, ...
-        keyframe_every = self.mapping.config['mapping']['keyframe_every']
-        # 简单映射：index = frame_id // keyframe_every
-        ids_kr = (frame_ids_kr // keyframe_every).clamp(min=0, max=poses_all.shape[0]-1)
+        for idx in buffer_indices:
+            if current_count >= num_rays_total:
+                break
+                
+            frame_data = self.buffer[idx]
+            n_samples = min(num_rays_per_frame, num_rays_total - current_count)
+            
+            H, W, _ = frame_data['rgb'].shape[1:]
+            
+            indices = torch.randint(0, H * W, (n_samples,))
+            h_idx = indices // W
+            w_idx = indices % W
+            
+            rgb = frame_data['rgb'][0, h_idx, w_idx, :].to(self.device)
+            depth = frame_data['depth'][0, h_idx, w_idx].to(self.device).unsqueeze(-1)
+            direction = frame_data['direction'][0, h_idx, w_idx, :].to(self.device)
+            
+            rays_batch = torch.cat([direction, rgb, depth], dim=-1)
+            rays_list.append(rays_batch)
+            
+            fid = frame_data['frame_id']
+            pose_idx = fid // kf_every
+            ids_batch = torch.full((n_samples,), pose_idx, dtype=torch.long, device=self.device)
+            ids_list.append(ids_batch)
+            
+            current_count += n_samples
 
-        rays_d_cam = rays_kr[..., :3]
-        target_s = rays_kr[..., 3:6]
-        target_d = rays_kr[..., 6:7]
-
-        # 和 global_BA 一样的射线变换
-        rays_d = torch.sum(
-            rays_d_cam[..., None, None, :] * poses_all[ids_kr, None, :3, :3],
-            -1
-        )
-        rays_o = poses_all[ids_kr, None, :3, -1].repeat(1, rays_d.shape[1], 1).reshape(-1, 3)
-        rays_d = rays_d.reshape(-1, 3)
-
-        ret_kr = self.mapping.model.forward(rays_o, rays_d, target_s, target_d)
-        loss_kr = self.mapping.get_loss_from_ret(ret_kr)
-        # 权重
-        weight = kr_cfg.get('weight', 1.0)
-        return weight * loss_kr
+        if len(rays_list) > 0:
+            rays = torch.cat(rays_list, dim=0)
+            ids_pose = torch.cat(ids_list, dim=0)
+            return rays, ids_pose
+        else:
+            return torch.empty(0, 7).to(self.device), torch.empty(0, dtype=torch.long).to(self.device)

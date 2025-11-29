@@ -34,7 +34,7 @@ from datasets.dataset import get_dataset
 from utils import coordinates, extract_mesh, colormap_image
 from tools.eval_ate import pose_evaluation
 from optimization.utils import at_to_transform_matrix, qt_to_transform_matrix, matrix_to_axis_angle, matrix_to_quaternion
-from baselines.CNM import CNMTeacher, CNMOffsurfaceReplay
+from baselines.CNM import CNMLearner 
 from baselines.KR import KRKeyframeReplay
 from baselines.MAS import MAS
 from baselines.MAS_original import MAS_original
@@ -135,32 +135,24 @@ class Mapping():
             self.ewc = EWC(self, ewc_cfg)
 
 
-        # --- CNM: Continual Neural Mapping 基线 ---
-        self.cnm_enabled = self.config['training'].get('cnm_enabled', False)
-        if self.cnm_enabled:
-            cnm_cfg = self.config['training'].get('cnm', {})
-            # 初始化 teacher
-            self.cnm_teacher = CNMTeacher(self)
-            # 初始化 CNM 自己的 function replay buffer
-            from baselines.CNM import CNMReplayBuffer  # 也可以在文件头一起 import
-            buffer_size = cnm_cfg.get('buffer_size', 200000)
-            batch_size = cnm_cfg.get('num_offsurface_samples', 2048)
-            self.cnm_buffer = CNMReplayBuffer(
-                device=self.device,
-                max_points=buffer_size,
-                sample_batch_size=batch_size,
-            )
-            # 初始化 off-surface replay 控制器
-            self.cnm_replay = CNMOffsurfaceReplay(self, self.cnm_buffer)
-            print(f"Agent {self.agent_id} has CNM enabled.")
-
-        # --- KR: Keyframe Replay baseline (replay last K keyframes) ---
+        # --- KR: Keyframe Replay baseline ---
         self.kr_enabled = self.config['training'].get('kr_enabled', False)
         if self.kr_enabled:
             kr_cfg = self.config['training'].get('kr', {})
-            kr_K = kr_cfg.get('K', 10)
-            self.kr_replay = KRKeyframeReplay(self, K=kr_K)
-            print(f"Agent {self.agent_id} has KR enabled with K={kr_K}.")
+            # 读取 buffer_size 和 save_every
+            kr_buffer_size = kr_cfg.get('buffer_size', 10) 
+            kr_save_every = kr_cfg.get('save_every', 50)   
+            
+            self.kr_replay = KRKeyframeReplay(self, buffer_size=kr_buffer_size, save_every=kr_save_every)
+            print(f"Agent {self.agent_id} has KR enabled: Buffer={kr_buffer_size}, Interval={kr_save_every}.")
+
+
+        # --- CNM: Continual Neural Mapping 基线 (Paper Version) ---
+        self.cnm_enabled = self.config['training'].get('cnm_enabled', False)
+        if self.cnm_enabled:
+            self.cnm_learner = CNMLearner(self)
+            print(f"Agent {self.agent_id} has CNM (Paper Ver.) enabled.")
+
 
         # --- MAS: Memory Aware Synapses baseline ---
         self.mas_enabled = self.config['training'].get('mas_enabled', False)
@@ -542,6 +534,11 @@ class Mapping():
             self.save_mesh(0)
         
         print(f'Agent {self.agent_id} First frame mapping done')
+
+        # 【修复】第一帧结束后，必须初始化 CNM 的 Buffer 和 Teacher
+        if getattr(self, 'cnm_enabled', False):
+            self.cnm_learner.step_end_of_frame(batch)
+            
         return ret, loss
 
     def smoothness(self, sample_points=256, voxel_size=0.1, margin=0.05, color=False):
@@ -582,13 +579,39 @@ class Mapping():
     
     def scaling_AUQ_CADMM(self, k, uncertainty_i, uncertainty_j):
 
-        uncertainty = uncertainty_i + uncertainty_j
-        a_1 = self.rho/1000
-        b_1 = self.rho
+        # uncertainty = uncertainty_i + uncertainty_j
+        # a_1 = self.rho/1000
+        # b_1 = self.rho
 
-        # scale to a_1 and b_1: uncertainty_scaled = p*uncertainty + q
-        p = (b_1-a_1)/(torch.max(uncertainty) - torch.min(uncertainty)) 
-        q = a_1 - p*torch.min(uncertainty)
+        # # scale to a_1 and b_1: uncertainty_scaled = p*uncertainty + q
+        # p = (b_1-a_1)/(torch.max(uncertainty) - torch.min(uncertainty)) 
+        # q = a_1 - p*torch.min(uncertainty)
+        # return p, q
+
+        # 1. 合并不确定性
+        uncertainty = uncertainty_i + uncertainty_j
+        
+        # 2. 计算统计量
+        mean_val = torch.mean(uncertainty)
+        if mean_val < 1e-8: # 防止除零
+            mean_val = 1.0
+            
+        # 3. 相对缩放策略 (Relative Scaling)
+        # 让平均重要性的参数，其权重 W ≈ rho
+        # 这样既保留了相对差异，又控制了整体量级
+        scale_factor = self.rho / mean_val
+        
+        # 4. 计算 p 和 q
+        # W = scale_factor * uncertainty + 0
+        # 对应 W = p * u + q
+        p = scale_factor
+        q = 0.0
+        
+        # 5. (可选) 软截断/硬截断，防止离群值导致 W 爆炸
+        # 例如：限制最大权重不超过 10 * rho
+        # 这一步通常在外部计算 W 时做 clamp，或者在这里做
+        # 但为了保持 p, q 线性形式，我们通常依赖外部的 clamp 或者接受大权重
+        
         return p, q
 
     def communicate(self,input):
@@ -657,7 +680,9 @@ class Mapping():
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
                 # 非对称：伪邻居（负数 ID）时对 W_i 乘以 gamma_t
                 gamma_t = 1.0
-                if isinstance(neighbor_id, int) and neighbor_id < 0:
+                is_temporal_neighbor = isinstance(neighbor_id, int) and neighbor_id < 0
+
+                if is_temporal_neighbor:
                     gamma_t = self.get_gamma_t(k)
 
                 W_i = gamma_t * (p*uncertainty_i + q)
@@ -669,10 +694,21 @@ class Mapping():
                 epsilon = 1e-8
                 update_term = 2*W_i * torch.div(W_j*theta_i_k - W_j*theta_j_k, denominator + epsilon)
 
+                # --- 【新增】Dual Masking: 仅针对时序邻居应用掩码 ---
+                if is_temporal_neighbor:
+                    # 逻辑：如果历史快照在某维度上的累积梯度(uncertainty_j)极小，
+                    # 说明该维度在历史时刻是未探索的噪声，不应累积对偶误差。
+                    # 阈值 1e-6 用于过滤浮点误差或极微小的梯度
+                    mask_threshold = float(self.temporal_consensus_config.get('mask_threshold', 1e-6))
+                    # 注意：uncertainty_j 需要 pad 到和 theta 一样大小才能做 mask
+                    uncertainty_j_padded = torch.nn.functional.pad(uncertainty_j, (0, padding_size), "constant", 0)
+                    mask = (uncertainty_j_padded > mask_threshold).float()
+                    
+                    # 应用掩码：在噪声区域，update_term 被置为 0，防止 p_ij 爆炸
+                    update_term = update_term * mask
+
                 # Update the specific dual variable for this neighbor
                 self.p_ij[neighbor_id] += update_term
-
-
         else:
             for neighbor in self.neighbors:
                 theta_j_k = neighbor[0]
@@ -727,12 +763,26 @@ class Mapping():
                 theta_j_k = neighbor[1]
                 uncertainty_j = neighbor[2]
 
+                is_temporal_neighbor = isinstance(neighbor_id, int) and neighbor_id < 0
+                
+                # --- 【新增】准备掩码 ---
+                mask = 1.0
+                if is_temporal_neighbor:
+                    mask_threshold = float(self.temporal_consensus_config.get('mask_threshold', 1e-6))
+                    uncertainty_j_padded = torch.nn.functional.pad(uncertainty_j, (0, padding_size), "constant", 0)
+                    mask = (uncertainty_j_padded > mask_threshold).float()
+
                 # Add the lagrangian term for this specific neighbor
-                lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id])
+                # 【修正】Masked Linear Term: <Theta, M * p>
+                # 虽然 p_ij 在 dual update 已经被 mask 过了，但显式乘 mask 更安全
+                if is_temporal_neighbor:
+                    lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id] * mask)
+                else:
+                    lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id])
 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
                 gamma_t = 1.0
-                if isinstance(neighbor_id, int) and neighbor_id < 0:
+                if is_temporal_neighbor:
                     gamma_t = self.get_gamma_t(k)
 
                 W_i = gamma_t * (p*uncertainty_i + q)
@@ -746,10 +796,18 @@ class Mapping():
                 difference = theta_i - consensus_theta
                 
                 W_i_clamped = torch.clamp(W_i, min=0.)
-                weighted_norm = torch.dot(difference*W_i_clamped, difference)
+                # 【修正】Masked Quadratic Term: || M * (Theta - Target) ||^2_W
+                # 等价于在加权范数中乘以 mask
+                if is_temporal_neighbor:
+                    # 只有在 mask=1 (历史有效) 的地方，才计算 aug_loss
+                    # 在 mask=0 (历史噪声) 的地方，aug_loss 为 0，模型自由学习
+                    weighted_norm = torch.dot(difference * W_i_clamped * mask, difference)
+                else:
+                    weighted_norm = torch.dot(difference * W_i_clamped, difference)
                 
                 # Add the augmented term for this specific neighbor
                 aug_loss += weighted_norm
+
         else:
             lag_loss = torch.dot(theta_i, self.p_i) #TODO: uncomment? comment?
             aug_loss = torch.tensor(0, dtype=torch.float64).to(self.device)
@@ -944,22 +1002,23 @@ class Mapping():
                 ids_pose_list = []
 
                 # 1) 先看 KR：如果 kr_enabled=True，则只用 KR-replay（不走原 replay）
-                if getattr(self, 'kr_enabled', False) and len(self.keyframeDatabase.frame_ids) > 0:
+                if getattr(self, 'kr_enabled', False):
                     kr_cfg = self.config['training'].get('kr', {})
                     num_replay_rays = kr_cfg.get('num_replay_rays', self.config['mapping']['sample'])
                     rays_kr, ids_pose_kr = self.kr_replay.sample_replay_rays(num_replay_rays)
                     if rays_kr.shape[0] > 0:
-                        rays_list.append(rays_kr)
-                        ids_pose_list.append(ids_pose_kr.to(torch.int64))
+                        # 【修复】显式移动到 GPU，防止 KR 返回 CPU tensor 导致 cat 报错
+                        rays_list.append(rays_kr.to(self.device))
+                        ids_pose_list.append(ids_pose_kr.to(torch.int64).to(self.device))
 
                 # 2) 如果没开 KR，但 enable_replay=True，则走原来的 global replay
                 elif self.enable_replay and len(self.keyframeDatabase.frame_ids) > 0:
                     rays_rep, ids_rep = self.keyframeDatabase.sample_global_rays(self.config['mapping']['sample'])
                     if rays_rep.shape[0] > 0:
-                        rays_list.append(rays_rep)
-                        ids_pose_list.append((ids_rep // self.config['mapping']['keyframe_every']).to(torch.int64))
+                        # 【修复】显式移动到 GPU
+                        rays_list.append(rays_rep.to(self.device))
+                        ids_pose_list.append((ids_rep // self.config['mapping']['keyframe_every']).to(torch.int64).to(self.device))
 
-                # 3) 当前帧采样 pixels（无论是否有 replay，都要有当前帧）
                 sample_size = self.config['mapping']['sample']
                 if self.enable_replay and not self.ewc_enabled and len(self.keyframeDatabase.frame_ids) > 0:
                     sample_size = max(
@@ -974,10 +1033,13 @@ class Mapping():
                 idx_cur = torch.tensor(idx_cur, dtype=torch.long)
                 current_rays_batch = current_rays[idx_cur, :]  # [Nc,7]
 
-                rays_list.append(current_rays_batch)
-                ids_cur = -torch.ones((current_rays_batch.shape[0],), dtype=torch.int64)
-                ids_pose_list.append(ids_cur)
+                current_rays_batch = current_rays_batch.to(self.device)
 
+                rays_list.append(current_rays_batch)
+                
+                # 【修复】创建 ID 时直接指定设备
+                ids_cur = -torch.ones((current_rays_batch.shape[0],), dtype=torch.int64, device=self.device)
+                ids_pose_list.append(ids_cur)
                 # 拼接所有 rays（至少包含当前帧）
                 rays = torch.cat(rays_list, dim=0)  # [N,7]
                 ids_all = torch.cat(ids_pose_list, dim=0)  # [N]
@@ -1046,8 +1108,8 @@ class Mapping():
 
                 # --- CNM: off-surface function replay loss ---
                 if getattr(self, 'cnm_enabled', False):
-                    # 从 CNM 专用 buffer 取一批 (x, sdf_teacher)，对当前模型加符号 & 数值一致性约束
-                    loss += self.cnm_replay.compute_loss(self.cnm_teacher)
+                    # 计算 Zero-level set loss 和 Sign regularization
+                    loss += self.cnm_learner.compute_loss()
 
                 # --- MAS loss: parameter importance regularization ---
                 if getattr(self, 'mas_enabled', False):
@@ -1216,11 +1278,15 @@ class Mapping():
         if i % self.config['mapping']['keyframe_every'] == 0:
             if self.config['mapping'].get('enable_replay', True):
                 self.keyframeDatabase.add_keyframe(batch, filter_depth=self.config['mapping']['filter_depth'])
-                if getattr(self, 'kr_enabled', False):
-                    self.kr_replay.register_keyframe(i)
-            #print(f'\nAgent {self.agent_id} add keyframe:{i}')
-            if self.ewc_enabled:
-                self.ewc.update_fisher_with_batch(batch)
+               
+        # --- EWC: 在每帧后更新 Fisher 信息 ---
+        if self.ewc_enabled:
+            self.ewc.update_fisher_with_batch(batch)
+
+        # 2. KR 独立逻辑
+        # 无论 enable_replay 是否开启，只要 kr_enabled 为 True，就尝试添加
+        if getattr(self, 'kr_enabled', False):
+            self.kr_replay.add_frame(batch, i)
 
         # --- 【新增】MAS Original: 将当前帧加入 Buffer ---
         # 注意：这里只存数据，不计算梯度
@@ -1236,14 +1302,7 @@ class Mapping():
         
          # --- CNM: 在任务边界更新 teacher 并填充 CNM buffer ---
         if getattr(self, 'cnm_enabled', False):
-            cnm_cfg = self.config['training'].get('cnm', {})
-            frames_per_task_cnm = cnm_cfg.get('frames_per_task', 500)
-            # 在每个“任务结束”处更新 CNM teacher，并根据 teacher 生成伪样本填入 buffer
-            if i > 0 and (i % frames_per_task_cnm) == 0:
-                # 1) 冻结当前模型为 teacher（θ^{t-1}）
-                self.cnm_teacher.update()
-                # 2) 用 teacher 在 bbox 内生成一大批 (x, sdf_teacher)，写入 CNM buffer
-                self.cnm_replay.populate_buffer_from_teacher(self.cnm_teacher)
+            self.cnm_learner.step_end_of_frame(batch)
 
         # --- 新增：周期性地创建历史快照 ---
         if self.temporal_consensus_enabled:

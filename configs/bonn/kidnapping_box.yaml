@@ -1,10 +1,10 @@
-inherit_from: configs/Replica/replica.yaml
+inherit_from: configs/bonn/bonn.yaml
 mapping:
-  bound: [[-5.6,1.4],[-3.2,2.8],[-1.6,1.8]]
-  marching_cubes_bound: [[-5.6,1.4],[-3.2,2.8],[-1.6,1.8]]
+  bound: [[-4,4],[-5.2,5.2],[-5,5]]
+  marching_cubes_bound: [[-6,6],[-6,6],[-6,6]]
   keyframe_every: 1
   map_every: 1
-  enable_replay: False
+  enable_replay: True
   mem_log_every: 20
 
 
@@ -35,7 +35,7 @@ training:
     save_every: 20       # 每 200 帧存一次 (Interval)
     num_replay_rays: 256 # 每次 BA 采样多少条射线
 
-  cnm_enabled: True
+  cnm_enabled: False
   cnm:
     buffer_size: 200000       # 真实表面点 Buffer 大小
     pts_per_frame: 2000        # 每帧向 Buffer 添加多少个点 (Down-sampling)
@@ -65,16 +65,14 @@ training:
     mask_threshold: 1e-4
 
 data:
-  datadir: data/Replica/room1
+  datadir: data/bonn/rgbd_bonn_kidnapping_box
   trainskip: 1
-  output: output/Replica/room1
-  exp_name: CNM
+  output: output/bonn/kidnapping_box
+  exp_name: demoåå
   load_path: fixed_decoder.pt
-
 
 tracking:
   gt_pose: True
-
 
 multi_agents:
   num_agents: 1

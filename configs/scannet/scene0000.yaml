@@ -16,16 +16,22 @@ training:
   ewc_enabled: False
   ewc_lambda: 0.1
 
-  mas_enabled: True
+  mas_enabled: False
   mas:
     lambda: 1           # MAS 正则系数 λ
-    frames_per_task: 100  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
+    frames_per_task: 10  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
 
+  mas_original_enabled: False
+  mas_original:
+    lambda: 1           # 正则化系数
+    frames_per_task: 100  # 多少帧触发一次离线计算
+    buffer_size: 5       # Replay Buffer 大小 (每个任务最多存多少帧)
 
-  kr_enabled: False
+  kr_enabled: True
   kr:
-    K: 10 # 保留的关键帧个数
-    num_replay_rays: 256 # 每次 BA 从这 K 个 KF 总共采样多少条射线
+    buffer_size: 10      # Buffer 最多存 10 帧
+    save_every: 50       # 每 50 帧存一次 (Interval)
+    num_replay_rays: 512 # 每次 BA 采样多少条射线
 
 
   cnm_enabled: False
@@ -48,14 +54,14 @@ training:
     eta: 0.1                  # Margin parameter in loss
     beta_min: 0.05            # Minimum uncertainty value
 
-
   temporal_consensus:
-    enabled: False
+    enabled: True
     K: 1
-    frames_per_task: 10
+    frames_per_task: 1
     inject_every: 1
-    gamma: 0.2 
+    gamma: 0.1
     uncertainty_decay: 1.0
+    mask_threshold: 1e-4
 
 
 grid:
@@ -66,7 +72,7 @@ data:
   datadir: data/scannet/scene0000_00
   trainskip: 1
   output: output/scannet/scene0000_00
-  exp_name: MAS
+  exp_name: kr
   load_path: fixed_decoder.pt
 
 tracking:
@@ -80,7 +86,7 @@ multi_agents:
   #edges_for_dropout: [ [0,1,0.99], [0,2,0.99], [1,2,0.99] ] # [node i, node j, possibility of dropping out]
   edges_for_dropout: []
   distributed_algorithm: 'AUQ_CADMM'
-  rho: 0.1
+  rho: 0.01
   track_uncertainty: True
   fix_decoder: True
   alpha: 0.15 # DSGD
