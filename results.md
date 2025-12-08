@@ -690,3 +690,98 @@ completion ratio: 94.93
 CD: 2.07
 precision@5cm: 92.02
 F1@5cm: 93.45
+
+
+
+
+
+
+For threshold 1e-4 rho 0.01
+Gamma mask gamma1
+accuracy: 2.14
+completion: 2.14
+completion ratio: 94.01
+CD: 2.14
+precision@5cm: 92.87
+F1@5cm: 93.44
+
+Gamma mask gamma0.8
+accuracy: 2.04
+completion: 2.11
+completion ratio: 93.95
+CD: 2.08
+precision@5cm: 93.21
+F1@5cm: 93.58
+
+Gamma mask gamma0.6
+accuracy: 2.10
+completion: 2.14
+completion ratio: 93.62
+CD: 2.12
+precision@5cm: 92.79
+F1@5cm: 93.21
+
+Gamma mask gamma0.2
+accuracy: 2.01
+completion: 2.11
+completion ratio: 93.67
+CD: 2.06
+precision@5cm: 93.31
+F1@5cm: 93.49
+
+For threshold 1e-5 rho 0.01
+Gamma mask gamma0.2
+accuracy: 1.96
+completion: 2.05
+completion ratio: 93.83
+CD: 2.00
+precision@5cm: 93.43
+F1@5cm: 93.63
+
+MAS_online
+accuracy: 1.90
+completion: 1.78
+completion ratio: 95.41
+CD: 1.84
+precision@5cm: 93.94
+F1@5cm: 94.67
+
+Ours
+accuracy: 1.88
+completion: 1.94
+completion ratio: 94.43
+CD: 1.91
+precision@5cm: 94.40
+F1@5cm: 94.42
+
+For threshold 1e-5 rho 0.01 gamma 1
+accuracy: 2.32
+completion: 2.19
+completion ratio: 93.38
+CD: 2.26
+precision@5cm: 91.92
+F1@5cm: 92.64
+
+For threshold 1e-4 rho 0.01 gamma 1
+accuracy: 2.26
+completion: 2.18
+completion ratio: 93.36
+CD: 2.22
+precision@5cm: 91.83
+F1@5cm: 92.59
+
+For threshold 1e-5 rho 0.1 gamma 1
+accuracy: 20.26
+completion: 3.92
+completion ratio: 81.82
+CD: 12.09
+precision@5cm: 61.28
+F1@5cm: 70.08
+
+For threshold 1e-5 rho 0.01 gamma 0.2
+accuracy: 1.99
+completion: 2.06
+completion ratio: 93.80
+CD: 2.02
+precision@5cm: 93.20
+F1@5cm: 93.50

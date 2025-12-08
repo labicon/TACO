@@ -35,7 +35,7 @@ training:
     save_every: 20       # 每 200 帧存一次 (Interval)
     num_replay_rays: 256 # 每次 BA 采样多少条射线
 
-  cnm_enabled: True
+  cnm_enabled: False
   cnm:
     buffer_size: 200000       # 真实表面点 Buffer 大小
     pts_per_frame: 2000        # 每帧向 Buffer 添加多少个点 (Down-sampling)
@@ -56,19 +56,20 @@ training:
     beta_min: 0.05            # Minimum uncertainty value
 
   temporal_consensus:
-    enabled: False
+    enabled: True
     K: 1
     frames_per_task: 1
     inject_every: 1
-    gamma: 0.1
+    gamma: 1
     uncertainty_decay: 1
-    mask_threshold: 1e-4
+    mask_threshold: 1e-5
 
 data:
   datadir: data/Replica/room1
   trainskip: 1
   output: output/Replica/room1
-  exp_name: CNM
+  exp_name: Ours_gammamask_gamma1
+
   load_path: fixed_decoder.pt
 
 

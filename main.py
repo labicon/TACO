@@ -683,29 +683,50 @@ class Mapping():
                 is_temporal_neighbor = isinstance(neighbor_id, int) and neighbor_id < 0
 
                 if is_temporal_neighbor:
-                    gamma_t = self.get_gamma_t(k)
+                    mask_threshold = float(self.temporal_consensus_config.get('mask_threshold', 1e-6))
+                    mask_unpadded = (uncertainty_j > mask_threshold).float()
 
-                W_i = gamma_t * (p*uncertainty_i + q)
+                    # # B. 计算自适应 Gamma (Adaptive Weight)
+                    # gamma_val = self.get_gamma_t(k)
+                    
+                    # # Ratio = 1.0 (Old) -> Gamma = 0 (History)
+                    # # Ratio = 0.0 (New) -> Gamma = Max (Current)
+                    # ratio = (uncertainty_i - uncertainty_j)/ (uncertainty_i+1e-8)
+                    # ratio = torch.clamp(ratio, 0.0, 1.0)
+                    # gamma_adaptive = gamma_val * (1 - ratio)
+                    # # 4. Final Gamma
+                    # gamma_t = gamma_adaptive * mask_unpadded
+
+
+                W_i = p*uncertainty_i + q 
                 W_i = torch.nn.functional.pad(W_i, (0, padding_size), "constant", self.rho)
-                W_j = p*uncertainty_j + q
+                W_j = p*uncertainty_j + q 
                 W_j = torch.nn.functional.pad(W_j, (0, padding_size), "constant", self.rho)
+
+                if is_temporal_neighbor:
+                    # Mask 也要 pad，padding 部分补 1 (假设 extra features 总是有效的) 或 0
+                    # 通常 hash grid padding 是空的，补 0 安全
+                    mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 0.0)
+                    
+                    # 再次确保 W_i 在噪声区域为 0
+                    W_j = W_j * mask_padded
 
                 denominator = W_i + W_j
                 epsilon = 1e-8
                 update_term = 2*W_i * torch.div(W_j*theta_i_k - W_j*theta_j_k, denominator + epsilon)
 
-                # --- 【新增】Dual Masking: 仅针对时序邻居应用掩码 ---
-                if is_temporal_neighbor:
-                    # 逻辑：如果历史快照在某维度上的累积梯度(uncertainty_j)极小，
-                    # 说明该维度在历史时刻是未探索的噪声，不应累积对偶误差。
-                    # 阈值 1e-6 用于过滤浮点误差或极微小的梯度
-                    mask_threshold = float(self.temporal_consensus_config.get('mask_threshold', 1e-6))
-                    # 注意：uncertainty_j 需要 pad 到和 theta 一样大小才能做 mask
-                    uncertainty_j_padded = torch.nn.functional.pad(uncertainty_j, (0, padding_size), "constant", 0)
-                    mask = (uncertainty_j_padded > mask_threshold).float()
+                # # --- 【新增】Dual Masking: 仅针对时序邻居应用掩码 ---
+                # if is_temporal_neighbor:
+                #     # 逻辑：如果历史快照在某维度上的累积梯度(uncertainty_j)极小，
+                #     # 说明该维度在历史时刻是未探索的噪声，不应累积对偶误差。
+                #     # 阈值 1e-6 用于过滤浮点误差或极微小的梯度
+                #     mask_threshold = float(self.temporal_consensus_config.get('mask_threshold', 1e-6))
+                #     # 注意：uncertainty_j 需要 pad 到和 theta 一样大小才能做 mask
+                #     uncertainty_j_padded = torch.nn.functional.pad(uncertainty_j, (0, padding_size), "constant", 0)
+                #     mask = (uncertainty_j_padded > mask_threshold).float()
                     
-                    # 应用掩码：在噪声区域，update_term 被置为 0，防止 p_ij 爆炸
-                    update_term = update_term * mask
+                #     # 应用掩码：在噪声区域，update_term 被置为 0，防止 p_ij 爆炸
+                #     update_term = update_term * mask
 
                 # Update the specific dual variable for this neighbor
                 self.p_ij[neighbor_id] += update_term
@@ -766,29 +787,43 @@ class Mapping():
                 is_temporal_neighbor = isinstance(neighbor_id, int) and neighbor_id < 0
                 
                 # --- 【新增】准备掩码 ---
-                mask = 1.0
                 if is_temporal_neighbor:
                     mask_threshold = float(self.temporal_consensus_config.get('mask_threshold', 1e-6))
-                    uncertainty_j_padded = torch.nn.functional.pad(uncertainty_j, (0, padding_size), "constant", 0)
-                    mask = (uncertainty_j_padded > mask_threshold).float()
+                    mask_unpadded = (uncertainty_j > mask_threshold).float()
+                    print("mask_unpadded:", mask_unpadded)
+                    # Pad Mask (用于后续点积)
+                    mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 0.0)
+                    print("mask_padded:", mask_padded)
 
+                    # B. Gamma
+                    gamma_val = self.get_gamma_t(k)
+                    ratio = (uncertainty_i - uncertainty_j)/ (uncertainty_i+1e-8)
+                    print("uncertainty_i - uncertainty_j:", uncertainty_i - uncertainty_j)
+                    print("ratio:", ratio)
+                    ratio = torch.clamp(ratio, 0.0, 1.0)
+                    # 修正公式：1 - ratio
+                    gamma_adaptive = gamma_val * (1 - ratio)
+                    
+                    # C. 融合
+                    #gamma_t_unpadded = gamma_adaptive * mask_unpadded
+                    #print("gamma_t_unpadded:", gamma_t_unpadded)
                 # Add the lagrangian term for this specific neighbor
                 # 【修正】Masked Linear Term: <Theta, M * p>
                 # 虽然 p_ij 在 dual update 已经被 mask 过了，但显式乘 mask 更安全
                 if is_temporal_neighbor:
-                    lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id] * mask)
+                    lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id] * mask_padded)
                 else:
                     lag_loss += torch.dot(theta_i, self.p_ij[neighbor_id])
 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
-                gamma_t = 1.0
-                if is_temporal_neighbor:
-                    gamma_t = self.get_gamma_t(k)
 
-                W_i = gamma_t * (p*uncertainty_i + q)
+                W_i = p*uncertainty_i + q
                 W_i = torch.nn.functional.pad(W_i, (0, padding_size), "constant", self.rho)
-                W_j = p*uncertainty_j + q
+                W_j = (p*uncertainty_j + q) * gamma_adaptive
                 W_j = torch.nn.functional.pad(W_j, (0, padding_size), "constant", self.rho)
+
+                if is_temporal_neighbor:
+                    W_j = W_j * mask_padded
                 
                 denominator = W_i + W_j
                 epsilon = 1e-8
@@ -796,18 +831,14 @@ class Mapping():
                 difference = theta_i - consensus_theta
                 
                 W_i_clamped = torch.clamp(W_i, min=0.)
-                # 【修正】Masked Quadratic Term: || M * (Theta - Target) ||^2_W
-                # 等价于在加权范数中乘以 mask
-                if is_temporal_neighbor:
-                    # 只有在 mask=1 (历史有效) 的地方，才计算 aug_loss
-                    # 在 mask=0 (历史噪声) 的地方，aug_loss 为 0，模型自由学习
-                    weighted_norm = torch.dot(difference * W_i_clamped * mask, difference)
-                else:
-                    weighted_norm = torch.dot(difference * W_i_clamped, difference)
                 
-                # Add the augmented term for this specific neighbor
+                # 计算加权范数
+                # 此时 W_i 已经包含了 mask (因为 gamma_t_unpadded 乘了 mask_unpadded，且 W_i 乘了 mask_padded)
+                # 所以这里直接点乘即可，当然再乘一次 mask_padded 也无妨，为了代码对称性这里省略显式乘 mask
+                #weighted_norm = torch.dot(difference * W_i_clamped, difference)
+                weighted_norm = torch.dot(difference * W_i_clamped, difference)
+                
                 aug_loss += weighted_norm
-
         else:
             lag_loss = torch.dot(theta_i, self.p_i) #TODO: uncomment? comment?
             aug_loss = torch.tensor(0, dtype=torch.float64).to(self.device)

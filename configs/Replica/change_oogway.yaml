@@ -40,7 +40,7 @@ data:
   downsample: 1
   sc_factor: 1
   output: output/Replica/change_oogway
-  exp_name: Ours_frames1_rho0.2_threshold1e-3_gamma0.2_iter10_denoised
+  exp_name: Ours_gammamask
   load_path: fixed_decoder.pt
   datadir: data/Replica/change_oogway
   trainskip: 1
@@ -98,17 +98,17 @@ training:
     K: 1
     frames_per_task: 1
     inject_every: 1
-    gamma: 0.2
+    gamma: 1
     uncertainty_decay: 1
-    mask_threshold: 1e-3
+    mask_threshold: 0
 
 multi_agents:
   num_agents: 1
   com_every: 1 
   distributed_algorithm: 'AUQ_CADMM'
-  rho:  0.2
+  rho:  0.05
   track_uncertainty: True
-  fix_decoder: False
+  fix_decoder: True
   #alpha: 0.15 # DSGD
   alpha: 0.02 # DSGT
   complete_graph: True
