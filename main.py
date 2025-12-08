@@ -708,9 +708,6 @@ class Mapping():
                     # 通常 hash grid padding 是空的，补 0 安全
                     mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 0.0)
                     
-                    # 再次确保 W_i 在噪声区域为 0
-                    W_j = W_j * mask_padded
-
                 denominator = W_i + W_j
                 epsilon = 1e-8
                 update_term = 2*W_i * torch.div(W_j*theta_i_k - W_j*theta_j_k, denominator + epsilon)
@@ -822,9 +819,6 @@ class Mapping():
                 W_j = (p*uncertainty_j + q) * gamma_adaptive
                 W_j = torch.nn.functional.pad(W_j, (0, padding_size), "constant", self.rho)
 
-                if is_temporal_neighbor:
-                    W_j = W_j * mask_padded
-                
                 denominator = W_i + W_j
                 epsilon = 1e-8
                 consensus_theta = torch.div( W_i*theta_i_k + W_j*theta_j_k, denominator + epsilon)
@@ -836,7 +830,7 @@ class Mapping():
                 # 此时 W_i 已经包含了 mask (因为 gamma_t_unpadded 乘了 mask_unpadded，且 W_i 乘了 mask_padded)
                 # 所以这里直接点乘即可，当然再乘一次 mask_padded 也无妨，为了代码对称性这里省略显式乘 mask
                 #weighted_norm = torch.dot(difference * W_i_clamped, difference)
-                weighted_norm = torch.dot(difference * W_i_clamped, difference)
+                weighted_norm = torch.dot(difference * W_i_clamped * mask_padded, difference)
                 
                 aug_loss += weighted_norm
         else:
