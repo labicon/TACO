@@ -726,7 +726,7 @@ class Mapping():
                 #     update_term = update_term * mask
 
                 # Update the specific dual variable for this neighbor
-                self.p_ij[neighbor_id] += update_term
+                self.p_ij[neighbor_id] += update_term * mask_padded
         else:
             for neighbor in self.neighbors:
                 theta_j_k = neighbor[0]
@@ -787,16 +787,16 @@ class Mapping():
                 if is_temporal_neighbor:
                     mask_threshold = float(self.temporal_consensus_config.get('mask_threshold', 1e-6))
                     mask_unpadded = (uncertainty_j > mask_threshold).float()
-                    print("mask_unpadded:", mask_unpadded)
+                    # print("mask_unpadded:", mask_unpadded)
                     # Pad Mask (用于后续点积)
                     mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 0.0)
-                    print("mask_padded:", mask_padded)
+                    # print("mask_padded:", mask_padded)
 
                     # B. Gamma
                     gamma_val = self.get_gamma_t(k)
                     ratio = (uncertainty_i - uncertainty_j)/ (uncertainty_i+1e-8)
-                    print("uncertainty_i - uncertainty_j:", uncertainty_i - uncertainty_j)
-                    print("ratio:", ratio)
+                    # print("uncertainty_i - uncertainty_j:", uncertainty_i - uncertainty_j)
+                    # print("ratio:", ratio)
                     ratio = torch.clamp(ratio, 0.0, 1.0)
                     # 修正公式：1 - ratio
                     gamma_adaptive = gamma_val * (1 - ratio)
@@ -814,9 +814,9 @@ class Mapping():
 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
 
-                W_i = p*uncertainty_i + q
+                W_i = (p*uncertainty_i + q) * gamma_adaptive
                 W_i = torch.nn.functional.pad(W_i, (0, padding_size), "constant", self.rho)
-                W_j = (p*uncertainty_j + q) * gamma_adaptive
+                W_j = p*uncertainty_j + q
                 W_j = torch.nn.functional.pad(W_j, (0, padding_size), "constant", self.rho)
 
                 denominator = W_i + W_j
