@@ -100,13 +100,13 @@ training:
     inject_every: 1
     gamma: 1
     uncertainty_decay: 1
-    mask_threshold: 0
+    mask_threshold: 1e-5
 
 multi_agents:
   num_agents: 1
   com_every: 1 
   distributed_algorithm: 'AUQ_CADMM'
-  rho:  0.05
+  rho:  0.02
   track_uncertainty: True
   fix_decoder: True
   #alpha: 0.15 # DSGD

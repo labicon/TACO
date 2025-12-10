@@ -27,7 +27,7 @@ training:
     frames_per_task: 100  # 多少帧触发一次离线计算
     buffer_size: 5       # Replay Buffer 大小 (每个任务最多存多少帧)
 
-  kr_enabled: True
+  kr_enabled: False
   kr:
     buffer_size: 10      # Buffer 最多存 10 帧
     save_every: 50       # 每 50 帧存一次 (Interval)
@@ -59,9 +59,10 @@ training:
     K: 1
     frames_per_task: 1
     inject_every: 1
-    gamma: 0.1
+    gamma: 1
     uncertainty_decay: 1.0
-    mask_threshold: 1e-4
+    mask_threshold: 1e-5
+    temp: 2.0
 
 
 grid:
@@ -72,7 +73,7 @@ data:
   datadir: data/scannet/scene0000_00
   trainskip: 1
   output: output/scannet/scene0000_00
-  exp_name: kr
+  exp_name: Ours_tanhgammamask_gamma1_K2_thr1e-5
   load_path: fixed_decoder.pt
 
 tracking:

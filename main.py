@@ -45,7 +45,77 @@ import sys
 
 from torch.nn.utils import parameters_to_vector as p2v
 import copy
+import seaborn as sns
 
+
+def analyze_delta_distribution(delta_tensor, save_path="delta_dist.png"):
+    """
+    全方位分析 Delta Tensor 的分布情况
+    """
+    # 1. 转换为 Numpy 数组，拉平
+    data = delta_tensor.detach().cpu().numpy().flatten()
+    
+    # 2. 基础统计数据
+    print("="*40)
+    print("【Delta 数据分布体检报告】")
+    print(f"数据总量: {len(data)}")
+    print(f"最小值: {np.min(data):.4e}")
+    print(f"最大值: {np.max(data):.4e} <--- 注意这里！")
+    print(f"均值 (Mean): {np.mean(data):.4e}")
+    print(f"中位数 (Median): {np.median(data):.4e}")
+    print(f"标准差 (Std): {np.std(data):.4e}")
+    
+    # 3. 零值与非零值分析
+    zeros = data[data <= 1e-9] # 认为是 0 的部分
+    non_zeros = data[data > 1e-9] # 有效变动部分
+    
+    print(f"零值数量 (<=1e-9): {len(zeros)} ({len(zeros)/len(data)*100:.2f}%)")
+    print(f"非零值数量 (>1e-9): {len(non_zeros)} ({len(non_zeros)/len(data)*100:.2f}%)")
+    
+    if len(non_zeros) == 0:
+        print("警告：没有检测到显著的非零 Delta！")
+        return
+
+    print("-" * 20)
+    print("【非零部分 (Active Values) 统计】")
+    print(f"非零均值: {np.mean(non_zeros):.4e}")
+    print(f"非零中位数: {np.median(non_zeros):.4e}")
+    
+    # 4. 分位数分析 (这是破案的关键)
+    # 查看非零数据中，从小到大排在不同位置的数值
+    quantiles = [0, 10, 25, 50, 75, 90, 95, 99, 99.9, 99.99]
+    percentiles = np.percentile(non_zeros, quantiles)
+    
+    print("-" * 20)
+    print("【非零数据的分位数 (Percentiles)】")
+    for q, p in zip(quantiles, percentiles):
+        print(f"{q}% 的非零数据小于: {p:.4e}")
+    print("="*40)
+
+    # 5. 绘图
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    
+    # 图1：整体分布 (Log Scale)
+    # 因为 0 太多，且最大值可能很大，用对数坐标才能看清
+    sns.histplot(non_zeros, bins=100, ax=axes[0], log_scale=(False, True), color='blue')
+    axes[0].set_title("Distribution of Non-Zero Deltas (Log Count)")
+    axes[0].set_xlabel("Delta Value")
+    
+    # 图2：箱线图 (看异常值)
+    sns.boxplot(x=non_zeros, ax=axes[1], color='orange')
+    axes[1].set_title("Boxplot (Detect Outliers)")
+    axes[1].set_xlabel("Delta Value")
+
+    # 图3：CDF 累积分布图 (看大部分数据集中在哪里)
+    sns.ecdfplot(data=non_zeros, ax=axes[2], color='green')
+    axes[2].set_title("CDF (Cumulative Distribution)")
+    axes[2].set_xlabel("Delta Value")
+    axes[2].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig(save_path)
+    print(f"分布图已保存至: {save_path}")
+    plt.close() # 关闭，防止内存泄漏
 
 class Mapping():
     def __init__(self, config, id, dataset_info):
@@ -706,7 +776,7 @@ class Mapping():
                 if is_temporal_neighbor:
                     # Mask 也要 pad，padding 部分补 1 (假设 extra features 总是有效的) 或 0
                     # 通常 hash grid padding 是空的，补 0 安全
-                    mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 0.0)
+                    mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 1.0)
                     
                 denominator = W_i + W_j
                 epsilon = 1e-8
@@ -789,17 +859,56 @@ class Mapping():
                     mask_unpadded = (uncertainty_j > mask_threshold).float()
                     # print("mask_unpadded:", mask_unpadded)
                     # Pad Mask (用于后续点积)
-                    mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 0.0)
+                    mask_padded = torch.nn.functional.pad(mask_unpadded, (0, padding_size), "constant", 1.0)
                     # print("mask_padded:", mask_padded)
 
-                    # B. Gamma
+                    # # B. Gamma
+                    # gamma_val = self.get_gamma_t(k)
+                    # ratio = (uncertainty_i - uncertainty_j)/ (uncertainty_i+1e-8)
+                    # # print("uncertainty_i - uncertainty_j:", uncertainty_i - uncertainty_j)
+                    # # print("ratio:", ratio)
+                    # ratio = torch.clamp(ratio, 0.0, 1.0)
+                    # # 修正公式：1 - ratio
+                    # gamma_adaptive = gamma_val * (1 - ratio)
+
+                    # --- Z-Score Adaptive Gamma ---
                     gamma_val = self.get_gamma_t(k)
-                    ratio = (uncertainty_i - uncertainty_j)/ (uncertainty_i+1e-8)
-                    # print("uncertainty_i - uncertainty_j:", uncertainty_i - uncertainty_j)
-                    # print("ratio:", ratio)
-                    ratio = torch.clamp(ratio, 0.0, 1.0)
-                    # 修正公式：1 - ratio
-                    gamma_adaptive = gamma_val * (1 - ratio)
+                    
+                    # 1. 计算不确定性增量 Delta
+                    delta = uncertainty_i - uncertainty_j
+                    #analyze_delta_distribution(delta)
+                    active_mean = torch.mean(delta)
+                    temp = self.temporal_consensus_config.get('temp', 1.0)
+                    ratio = torch.tanh(delta / ((active_mean/temp) + 1e-12))
+                
+
+                    # 2. 统计当前层的分布特征
+                    # batch_mean 和 batch_std 代表了当前数据波动的“平均水位”和“浪高”
+                    # batch_mean = delta.mean()
+                    # #print("batch_mean:", batch_mean)
+                    # batch_std = delta.std()
+                    # #print("batch_std:", batch_std)
+                    
+                    # 3. 动态定义“上限阈值” (Dynamic Upper Bound)
+                    # 逻辑：如果一个值的 delta 超过了 (均值 + 2倍标准差)，我们认为它非常大，ratio 应为 1
+                    # k_sigma 是敏感度系数：
+                    # k=2.0: 约前 5% 的大差异会被强力抑制
+                    # k=3.0: 只有极端的 1% 差异会被抑制
+                    # k_sigma = 2.0 
+                    # limit = batch_mean + k_sigma * batch_std + 1e-9
+                    
+                    # 4. 计算 Ratio (归一化)
+                    # 关键点：这里不减去 mean，而是直接除以 limit
+                    # 这样 delta=0 时，ratio 严格为 0
+                    # ratio = delta / limit
+                    # ratio = torch.clamp(ratio, 0.0, 1.0)
+                    #analyze_delta_distribution(ratio)
+                    #input("Press Enter to continue...")
+                    
+                    # 4. 计算 Gamma
+                    # 如果 Delta 很大 (Z很大) -> Ratio -> 1 -> Gamma -> 0 (信任当前，不共识)
+                    # 如果 Delta 很小 (Z很小) -> Ratio -> 0 -> Gamma -> gamma_val (信任历史，强共识)
+                    gamma_adaptive = gamma_val * ratio
                     
                     # C. 融合
                     #gamma_t_unpadded = gamma_adaptive * mask_unpadded
@@ -814,24 +923,25 @@ class Mapping():
 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
 
-                W_i = (p*uncertainty_i + q) * gamma_adaptive
+                W_i_gamma = (p*uncertainty_i + q) * gamma_adaptive
+                W_i_gamma = torch.nn.functional.pad(W_i_gamma, (0, padding_size), "constant", self.rho)
+                W_i = p*uncertainty_i + q
                 W_i = torch.nn.functional.pad(W_i, (0, padding_size), "constant", self.rho)
                 W_j = p*uncertainty_j + q
                 W_j = torch.nn.functional.pad(W_j, (0, padding_size), "constant", self.rho)
 
-                denominator = W_i + W_j
+                denominator = W_i_gamma + W_j
                 epsilon = 1e-8
-                consensus_theta = torch.div( W_i*theta_i_k + W_j*theta_j_k, denominator + epsilon)
+                consensus_theta = torch.div( W_i_gamma*theta_i_k + W_j*theta_j_k, denominator + epsilon)
                 difference = theta_i - consensus_theta
                 
                 W_i_clamped = torch.clamp(W_i, min=0.)
-                
+    
                 # 计算加权范数
                 # 此时 W_i 已经包含了 mask (因为 gamma_t_unpadded 乘了 mask_unpadded，且 W_i 乘了 mask_padded)
                 # 所以这里直接点乘即可，当然再乘一次 mask_padded 也无妨，为了代码对称性这里省略显式乘 mask
                 #weighted_norm = torch.dot(difference * W_i_clamped, difference)
                 weighted_norm = torch.dot(difference * W_i_clamped * mask_padded, difference)
-                
                 aug_loss += weighted_norm
         else:
             lag_loss = torch.dot(theta_i, self.p_i) #TODO: uncomment? comment?
