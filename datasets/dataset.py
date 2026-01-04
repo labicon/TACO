@@ -38,6 +38,9 @@ def get_dataset(config):
     elif config['dataset'] == 'bonn':
         dataset = BonnDataset
 
+    elif config['dataset'] == 'gibson':
+        dataset = ReplicaDataset
+
     
     return dataset(config, 
                    config['data']['datadir'], 
@@ -207,7 +210,7 @@ class ReplicaDataset(BaseDataset):
 
         self.rays_d = None
         self.tracking_mask = None
-        self.frame_ids = range(0, len(self.img_files))
+        self.frame_ids = list(range(0, len(self.img_files), self.trainskip))
         self.num_frames = len(self.frame_ids)
     
     def __len__(self):

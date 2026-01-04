@@ -56,41 +56,41 @@ def analyze_delta_distribution(delta_tensor, save_path="delta_dist.png"):
     data = delta_tensor.detach().cpu().numpy().flatten()
     
     # 2. 基础统计数据
-    print("="*40)
-    print("【Delta 数据分布体检报告】")
-    print(f"数据总量: {len(data)}")
-    print(f"最小值: {np.min(data):.4e}")
-    print(f"最大值: {np.max(data):.4e} <--- 注意这里！")
-    print(f"均值 (Mean): {np.mean(data):.4e}")
-    print(f"中位数 (Median): {np.median(data):.4e}")
-    print(f"标准差 (Std): {np.std(data):.4e}")
+    # print("="*40)
+    # print("【Delta 数据分布体检报告】")
+    # print(f"数据总量: {len(data)}")
+    # print(f"最小值: {np.min(data):.4e}")
+    # print(f"最大值: {np.max(data):.4e} <--- 注意这里！")
+    # print(f"均值 (Mean): {np.mean(data):.4e}")
+    # print(f"中位数 (Median): {np.median(data):.4e}")
+    # print(f"标准差 (Std): {np.std(data):.4e}")
     
     # 3. 零值与非零值分析
     zeros = data[data <= 1e-9] # 认为是 0 的部分
     non_zeros = data[data > 1e-9] # 有效变动部分
     
-    print(f"零值数量 (<=1e-9): {len(zeros)} ({len(zeros)/len(data)*100:.2f}%)")
-    print(f"非零值数量 (>1e-9): {len(non_zeros)} ({len(non_zeros)/len(data)*100:.2f}%)")
+    # print(f"零值数量 (<=1e-9): {len(zeros)} ({len(zeros)/len(data)*100:.2f}%)")
+    # print(f"非零值数量 (>1e-9): {len(non_zeros)} ({len(non_zeros)/len(data)*100:.2f}%)")
     
-    if len(non_zeros) == 0:
-        print("警告：没有检测到显著的非零 Delta！")
-        return
+    # if len(non_zeros) == 0:
+    #     print("警告：没有检测到显著的非零 Delta！")
+    #     return
 
-    print("-" * 20)
-    print("【非零部分 (Active Values) 统计】")
-    print(f"非零均值: {np.mean(non_zeros):.4e}")
-    print(f"非零中位数: {np.median(non_zeros):.4e}")
+    # print("-" * 20)
+    # print("【非零部分 (Active Values) 统计】")
+    # print(f"非零均值: {np.mean(non_zeros):.4e}")
+    # print(f"非零中位数: {np.median(non_zeros):.4e}")
     
     # 4. 分位数分析 (这是破案的关键)
     # 查看非零数据中，从小到大排在不同位置的数值
     quantiles = [0, 10, 25, 50, 75, 90, 95, 99, 99.9, 99.99]
     percentiles = np.percentile(non_zeros, quantiles)
     
-    print("-" * 20)
-    print("【非零数据的分位数 (Percentiles)】")
-    for q, p in zip(quantiles, percentiles):
-        print(f"{q}% 的非零数据小于: {p:.4e}")
-    print("="*40)
+    # print("-" * 20)
+    # print("【非零数据的分位数 (Percentiles)】")
+    # for q, p in zip(quantiles, percentiles):
+    #     print(f"{q}% 的非零数据小于: {p:.4e}")
+    # print("="*40)
 
     # 5. 绘图
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
@@ -566,16 +566,19 @@ class Mapping():
                 mas_proxy_loss = 0.0
                 if 'rgb' in ret: mas_proxy_loss += ret['rgb'].pow(2).sum()
                 if 'depth' in ret: mas_proxy_loss += ret['depth'].pow(2).sum()
-                if 'sdf' in ret: mas_proxy_loss += ret['sdf'].pow(2).sum()
                 mas_proxy_loss = mas_proxy_loss / ret['rgb'].shape[0]
                 
                 mas_proxy_loss.backward(retain_graph=True)
+
+                # 3. 如果开启了 MAS，累积给 MAS
+                if getattr(self, 'mas_enabled', False):
+                    self.mas.accumulate_importance_from_grad()
+
                 
                 grid_grad = self.model.embed_fn.params.grad
                 if grid_grad is not None:
                     grad_mag = torch.abs(grid_grad)
                     # 使用和 global_BA 一样的更新策略
-                    self.uncertainty_tensor *= self.uncert_decay
                     self.uncertainty_tensor += grad_mag
                 
                 # 清空梯度，准备算真正的 Loss
@@ -872,43 +875,33 @@ class Mapping():
                     # gamma_adaptive = gamma_val * (1 - ratio)
 
                     # --- Z-Score Adaptive Gamma ---
-                    gamma_val = self.get_gamma_t(k)
+                    # gamma_val = self.get_gamma_t(k)
                     
-                    # 1. 计算不确定性增量 Delta
-                    delta = uncertainty_i - uncertainty_j
-                    #analyze_delta_distribution(delta)
-                    active_mean = torch.mean(delta)
-                    temp = self.temporal_consensus_config.get('temp', 1.0)
-                    ratio = torch.tanh(delta / ((active_mean/temp) + 1e-12))
-                
-
-                    # 2. 统计当前层的分布特征
-                    # batch_mean 和 batch_std 代表了当前数据波动的“平均水位”和“浪高”
-                    # batch_mean = delta.mean()
-                    # #print("batch_mean:", batch_mean)
-                    # batch_std = delta.std()
-                    # #print("batch_std:", batch_std)
+                    # # 1. 计算不确定性增量 Delta
+                    # delta = uncertainty_i - uncertainty_j
+                    # #analyze_delta_distribution(delta)
+                    # quantile = self.temporal_consensus_config.get('quantile', 0.95)
+                    # temp = self.temporal_consensus_config.get('temp', 0.2)
+                    # low_bound = self.temporal_consensus_config.get('low_bound', 0.2)
+                    # active_quantile = torch.quantile(delta, quantile)
+                    # aq_safe = active_quantile + 1e-12
                     
-                    # 3. 动态定义“上限阈值” (Dynamic Upper Bound)
-                    # 逻辑：如果一个值的 delta 超过了 (均值 + 2倍标准差)，我们认为它非常大，ratio 应为 1
-                    # k_sigma 是敏感度系数：
-                    # k=2.0: 约前 5% 的大差异会被强力抑制
-                    # k=3.0: 只有极端的 1% 差异会被抑制
-                    # k_sigma = 2.0 
-                    # limit = batch_mean + k_sigma * batch_std + 1e-9
+                    # # --- 分段函数逻辑开始 ---
+                    # abs_delta = torch.abs(delta)
                     
-                    # 4. 计算 Ratio (归一化)
-                    # 关键点：这里不减去 mean，而是直接除以 limit
-                    # 这样 delta=0 时，ratio 严格为 0
-                    # ratio = delta / limit
-                    # ratio = torch.clamp(ratio, 0.0, 1.0)
-                    #analyze_delta_distribution(ratio)
-                    #input("Press Enter to continue...")
+                    # # 分段计算 magnitude (幅度):
+                    # # 1. abs_delta <= active_quantile: 线性增长至 low_bound
+                    # # 2. abs_delta >  active_quantile: 从 low_bound 开始按 tanh 增长至 1.0
+                    # ratio_mag = torch.where(
+                    #     abs_delta <= active_quantile,
+                    #     low_bound * (abs_delta / aq_safe),
+                    #     low_bound + (1.0 - low_bound) * torch.tanh((abs_delta - active_quantile) / temp)
+                    # )
                     
-                    # 4. 计算 Gamma
-                    # 如果 Delta 很大 (Z很大) -> Ratio -> 1 -> Gamma -> 0 (信任当前，不共识)
-                    # 如果 Delta 很小 (Z很小) -> Ratio -> 0 -> Gamma -> gamma_val (信任历史，强共识)
-                    gamma_adaptive = gamma_val * ratio
+                    # # 恢复符号得到最终 ratio
+                    # ratio = ratio_mag * torch.sign(delta)
+                    # # --- 分段函数逻辑结束 ---
+                    # gamma_adaptive = gamma_val * ratio
                     
                     # C. 融合
                     #gamma_t_unpadded = gamma_adaptive * mask_unpadded
@@ -923,7 +916,7 @@ class Mapping():
 
                 p, q = self.scaling_AUQ_CADMM(k, uncertainty_i, uncertainty_j)
 
-                W_i_gamma = (p*uncertainty_i + q) * gamma_adaptive
+                W_i_gamma = p*uncertainty_i + q
                 W_i_gamma = torch.nn.functional.pad(W_i_gamma, (0, padding_size), "constant", self.rho)
                 W_i = p*uncertainty_i + q
                 W_i = torch.nn.functional.pad(W_i, (0, padding_size), "constant", self.rho)
@@ -1200,9 +1193,7 @@ class Mapping():
                     # 1. 构建 Proxy Loss (只看输出幅度，不看 GT 误差)
                     mas_proxy_loss = 0.0
                     if 'rgb' in ret: mas_proxy_loss += ret['rgb'].pow(2).sum()
-                    if 'depth' in ret: mas_proxy_loss += ret['depth'].pow(2).sum()
-                    if 'sdf' in ret: mas_proxy_loss += ret['sdf'].pow(2).sum()
-                    
+                    if 'depth' in ret: mas_proxy_loss += ret['depth'].pow(2).sum()                    
                     mas_proxy_loss = mas_proxy_loss / ret['rgb'].shape[0] # Mean
                     
                     # 2. 反向传播获取“结构梯度”
@@ -1220,7 +1211,6 @@ class Mapping():
                         if grid_grad is not None:
                             # 获取幅度
                             grad_mag = torch.abs(grid_grad)
-                            self.uncertainty_tensor*= self.uncert_decay
                             self.uncertainty_tensor += grad_mag 
                             
                     # 5. 清空梯度，准备计算真正的 Loss

@@ -1,7 +1,8 @@
 inherit_from: configs/scannet/scannet.yaml
 mapping:
-  bound: [[-0.3,9.6],[-0.3,9.4],[-0.3,3.5]]
-  marching_cubes_bound: [[-0.3,9.6],[-0.3,9.4],[-0.3,3.5]]
+  bound: [[0.5,9.1],[-0.3,7.8],[-0.3,2.7]]
+  marching_cubes_bound: [[0.5,9.1],[-0.3,7.8],[-0.3,2.7]]
+
   keyframe_every: 1
   map_every: 1
   enable_replay: True
@@ -69,9 +70,9 @@ grid:
 
 
 data:
-  datadir: ./data/scannet/scene0106_00
+  datadir: ./data/scannet/scene0169_00
   trainskip: 1
-  output: output/scannet/scene0106_00
+  output: output/scannet/scene0169_00
   exp_name: Normal
   load_path: fixed_decoder.pt
 
@@ -91,17 +92,16 @@ multi_agents:
   fix_decoder: True
   alpha: 0.15
 
+edge_based: True
 
 cam:
   H: 480
   W: 640
-  fx: 577.590698
-  fy: 578.729797
-  cx: 318.905426
-  cy: 242.683609
+  fx: 574.540771
+  fy: 577.583740
+  cx: 322.522827
+  cy: 238.558853
   png_depth_scale: 1000.
-  crop_edge: 10
+  # crop_edge: 10
   near: 0
-  far: 5.0
-
-edge_based: True
+  far: 8.0

@@ -59,10 +59,8 @@ training:
     K: 1
     frames_per_task: 1
     inject_every: 1
-    gamma: 1
-    uncertainty_decay: 1.0
-    mask_threshold: 1e-5
-    temp: 2.0
+    mask_threshold: 0
+
 
 
 grid:
@@ -73,7 +71,7 @@ data:
   datadir: data/scannet/scene0000_00
   trainskip: 1
   output: output/scannet/scene0000_00
-  exp_name: Ours_tanhgammamask_gamma1_K2_thr1e-5
+  exp_name: Ours_nomask
   load_path: fixed_decoder.pt
 
 tracking:
