@@ -20,32 +20,32 @@ training:
 
   mas_enabled: True
   mas:
-    lambda: 1           # MAS 正则系数 λ
-    frames_per_task: 1  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
+    lambda: 1
+    frames_per_task: 1
 
   mas_original_enabled: False
   mas_original:
-    lambda: 1           # 正则化系数
-    frames_per_task: 100  # 多少帧触发一次离线计算
-    buffer_size: 10       # Replay Buffer 大小 (每个任务最多存多少帧)
+    lambda: 1
+    frames_per_task: 100
+    buffer_size: 10
 
   kr_enabled: False
   kr:
-    buffer_size: 10      # Buffer 最多存 10 帧
-    save_every: 20       # 每 200 帧存一次 (Interval)
-    num_replay_rays: 256 # 每次 BA 采样多少条射线
+    buffer_size: 10
+    save_every: 20
+    num_replay_rays: 256
 
   cnm_enabled: False
   cnm:
-    buffer_size: 200000       # 真实表面点 Buffer 大小
-    pts_per_frame: 2000        # 每帧向 Buffer 添加多少个点 (Down-sampling)
-    batch_size_zero: 2048    # 每次 BA 回放多少个表面点 (Zero level-set)
-    batch_size_off: 4096      # 每次 BA 采样多少个随机离面点 (Off-surface)
-    weight_zero: 1.0          # 表面回放 Loss 权重
-    weight_sign: 0.01          # 符号正则化 Loss 权重
-    alpha: 5              # 符号正则强度 (论文公式中的 alpha)
-    update_freq: 20         # 每多少帧进行一次 CNM 更新
-    epsilon: 0.05             # 符号正则平滑参数 (论文公式中的 ε)
+    buffer_size: 200000
+    pts_per_frame: 2000
+    batch_size_zero: 2048
+    batch_size_off: 4096
+    weight_zero: 1.0
+    weight_sign: 0.01
+    alpha: 5
+    update_freq: 20
+    epsilon: 0.05
 
   unikd_enabled: False  # Set to True to enable
   unikd:

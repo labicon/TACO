@@ -18,33 +18,33 @@ training:
 
   mas_enabled: False
   mas:
-    lambda: 1           # MAS 正则系数 λ
-    frames_per_task: 1  # 多少帧视为一个“任务”，在任务边界更新 Ω 和 θ*
+    lambda: 1
+    frames_per_task: 1
 
   mas_original_enabled: False
   mas_original:
-    lambda: 1           # 正则化系数
-    frames_per_task: 100  # 多少帧触发一次离线计算
-    buffer_size: 5       # Replay Buffer 大小 (每个任务最多存多少帧)
+    lambda: 1
+    frames_per_task: 100
+    buffer_size: 5
 
   kr_enabled: False
   kr:
-    buffer_size: 10      # Buffer 最多存 10 帧
-    save_every: 50       # 每 50 帧存一次 (Interval)
-    num_replay_rays: 512 # 每次 BA 采样多少条射线
+    buffer_size: 10
+    save_every: 50
+    num_replay_rays: 512
 
 
   cnm_enabled: False
   cnm:
     frames_per_task: 100
     buffer_size: 200000
-    num_samples_per_teacher: 200000    # 每次 teacher 更新时生成的伪样本数
-    num_offsurface_samples: 1024      # 每次 BA 取多少伪样本
-    offsurface_weight: 0.01           # 整体 CNM loss 权重，建议先小一点
-    alpha: 6.0                        # ψ_s 中的 α
-    near_threshold: 0.05              # |sdf_old| < 0.05 视为 near-surface
-    value_weight_near: 1.0            # near 区域 value consistency 权重
-    value_weight_far: 0.1             # far 区域 value consistency 权重
+    num_samples_per_teacher: 200000
+    num_offsurface_samples: 1024
+    offsurface_weight: 0.01
+    alpha: 6.0
+    near_threshold: 0.05
+    value_weight_near: 1.0
+    value_weight_far: 0.1
 
   unikd_enabled: False  # Set to True to enable
   unikd:

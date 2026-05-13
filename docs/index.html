@@ -2,30 +2,14 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <!-- Meta tags for social media banners, these should be filled in appropriatly as they are your "business card" -->
-  <!-- Replace the content tag with appropriate information -->
-  <meta name="description" content="RAMEN: Real-time Asynchronous Multi-agent Neural Implicit Mapping">
-  <meta property="og:title" content="RAMEN: Real-time Asynchronous Multi-agent Neural Implicit Mapping"/>
-  <meta property="og:description" content="RAMEN: Real-time Asynchronous Multi-agent Neural Implicit Mapping"/>
-  <meta property="og:url" content="https://https://iconlab.negarmehr.com/RAMEN/"/>
-  <!-- Path to banner image, should be in the path listed below. Optimal dimenssions are 1200X630-->
-  <meta property="og:image" content="static/image/flowchart.png" />
-  <meta property="og:image:width" content="1263"/>
-  <meta property="og:image:height" content="751"/>
-
-
-  <!-- <meta name="twitter:title" content="TWITTER BANNER TITLE META TAG">
-  <meta name="twitter:description" content="TWITTER BANNER DESCRIPTION META TAG"> -->
-  <!-- Path to banner image, should be in the path listed below. Optimal dimenssions are 1200X600-->
-  <!-- <meta name="twitter:image" content="static/images/your_twitter_banner_image.png">
-  <meta name="twitter:card" content="summary_large_image"> -->
-  
-  <!-- Keywords for your paper to be indexed by-->
-  <meta name="keywords" content="RAMEN: Real-time Asynchronous Multi-agent Neural Implicit Mapping, Star tracker, convolutional neural network, CNN, star detection, star centroiding, attitude determination, CubeSat">
+  <meta name="description" content="TACO: Temporal Consensus Optimization for Continual Neural Mapping">
+  <meta property="og:title" content="TACO: Temporal Consensus Optimization for Continual Neural Mapping"/>
+  <meta property="og:description" content="Replay-free continual neural mapping with temporal consensus optimization."/>
+  <meta property="og:url" content="https://labicon.github.io/TACO/"/>
+  <meta name="keywords" content="TACO, continual neural mapping, neural implicit mapping, temporal consensus, robotics, RSS 2026">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>RAMEN</title>
-  <link rel="icon" type="image/x-icon" href="static/images/blahaj.ico">
+  <title>TACO</title>
   <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
   rel="stylesheet">
 
@@ -37,109 +21,71 @@
   href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
   <link rel="stylesheet" href="static/css/index.css">
 
-  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-  <script src="https://documentcloud.adobe.com/view-sdk/main.js"></script>
   <script defer src="static/js/fontawesome.all.min.js"></script>
-  <script src="static/js/bulma-carousel.min.js"></script>
-  <script src="static/js/bulma-slider.min.js"></script>
-  <script src="static/js/index.js"></script>
-
-  <!-- for google verification -->
-  <meta name="google-site-verification" content="ofm0KCCgUiCsQrrKi3ncA0XphB-kfgnLMKo0vmzyGRk" />
   
   <style>
-    .rainbow-text {
-      background: linear-gradient(to right, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: rainbow-animation 5s linear infinite;
-      display: inline-block; /* Essential for the gradient to apply correctly */
+    .tagline {
+      max-width: 900px;
+      margin: 1.5rem auto 0;
     }
 
-    @keyframes rainbow-animation {
-      to {
-        background-position: 200% center;
-      }
+    .method-box {
+      border: 1px solid #dbdbdb;
+      border-radius: 8px;
+      padding: 1.25rem;
+      height: 100%;
+      background: #fff;
     }
   </style>
 </head>
 <body>
 
 
-  <section class="hero">
-    <div class="hero-body">
-      <div class="container is-max-desktop">
-        <div class="columns is-centered">
-          <div class="column has-text-centered">
-            <!-- Title here -->
-            <h1 class="title is-1 publication-title">RAMEN: Real-time Asynchronous Multi-agent Neural Implicit Mapping</h1>
-            <h2 class="subtitle is-3 publication-title">
-              <span class="rainbow-text">Accepted by RSS 2025</span>
-            </h2>
-            <div class="is-size-5 publication-authors">
-              <!-- Paper authors -->
-              <span class="author-block">Hongrui Zhao,</span>
-                <span class="author-block"><a href="https://www.borisivanovic.com/">Boris Ivanovic</a>,</span>
-                  <span class="author-block"><a href="https://negarmehr.com/">Negar Mehr</a>,</span>
-  
-                  </div>
+<section class="hero">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column has-text-centered">
+          <h1 class="title is-1 publication-title">TACO: Temporal Consensus Optimization for Continual Neural Mapping</h1>
+          <h2 class="subtitle is-4 publication-title">Robotics: Science and Systems (RSS) 2026</h2>
 
-                  <div class="is-size-5 publication-authors">
-                    <span class="author-block">University of Illinois Urbana-Champaign</span><br>
-                    <span class="author-block">NVIDIA Research</span><br>
-                    <span class="author-block">University of California Berkeley</span>
-                  </div>
+          <div class="is-size-5 publication-authors">
+            <span class="author-block"><a href="https://www.wyaaaattwho.xyz/about">Xunlan Zhou</a><sup>*</sup>,</span>
+            <span class="author-block"><a href="https://scholar.google.com/citations?user=4uQNsj8AAAAJ&hl=zh-CN">Hongrui Zhao</a><sup>*</sup>,</span>
+            <span class="author-block"><a href="https://negarmehr.com/">Negar Mehr</a></span>
+          </div>
 
- 
-                  <!-- Github link -->
-                  <span class="link-block">
-                    <a href="https://github.com/labicon/RAMEN" target="_blank"
-                    class="external-link button is-normal is-rounded is-dark">
-                    <span class="icon">
-                      <i class="fab fa-github"></i>
-                    </span>
-                    <span>Code</span>
-                  </a>
-                </span> 
+          <div class="is-size-5 publication-authors">
+            <span class="author-block"><sup>*</sup>Equal contribution</span>
+          </div>
 
-                <!-- ArXiv abstract Link -->
-                <span class="link-block">
-                  <a href="https://arxiv.org/abs/2502.19592" target="_blank"
-                  class="external-link button is-normal is-rounded is-dark">
-                  <span class="icon">
-                    <i class="ai ai-arxiv"></i>
-                  </span>
-                  <span>arXiv</span>
-                </a>
-              </span>
-            </div>
+          <p class="subtitle is-5 tagline">
+            A replay-free framework for continual neural mapping that preserves reliable historical geometry with temporal consensus over neural implicit map snapshots.
+          </p>
+
+          <div class="publication-links">
+            <span class="link-block">
+              <a href="https://github.com/labicon/TACO" target="_blank" class="external-link button is-normal is-rounded is-dark">
+                <span class="icon"><i class="fab fa-github"></i></span>
+                <span>Code</span>
+              </a>
+            </span>
+            <span class="link-block">
+              <a href="https://arxiv.org/abs/2602.04516" target="_blank" class="external-link button is-normal is-rounded is-dark">
+                <span class="icon"><i class="ai ai-arxiv"></i></span>
+                <span>arXiv</span>
+              </a>
+            </span>
           </div>
         </div>
       </div>
     </div>
   </div>
 </section>
-
-
-<!-- Teaser video-->
-<section class="hero teaser">
-  <div class="container is-max-desktop">
-    <div class="hero-body">
-      <video poster="" id="tree" autoplay controls muted loop height="100%">
-        <!-- Your video here -->
-        <source src="static/videos/hardware_experiment_video.mp4"
-        type="video/mp4">
-      </video>
-      <h2 class="subtitle has-text-centered">
-        In a challenging real-world experiment with limited communication (agents can only exchange information every 30seconds), 
-        our method RAMEN enables each turtlebot to successfully map the full scene while only physically visiting half of the scene (explored areas and trajectories are colored accordingly). 
-        Our method achieves accuracy comparable to the ground truth while the baseline method (DiNNO) fails to converge.
-      </h2>
-    </div>
-  </div>
-</section>
-<!-- End teaser video -->
-
+            </div>
+          </div>
+        </div>
+      </div>
 <!-- Paper abstract -->
 <section class="section hero is-light">
   <div class="container is-max-desktop">
@@ -148,15 +94,7 @@
         <h2 class="title is-3">Abstract</h2>
         <div class="content has-text-justified">
           <p>
-            Multi-agent neural implicit mapping allows robots to collaboratively capture and reconstruct complex environments with high fidelity. 
-            However, existing approaches often rely on synchronous communication, which is impractical in real-world scenarios with limited bandwidth and potential communication interruptions. 
-            This paper introduces RAMEN: Real-time Asynchronous Multi-agEnt Neural implicit mapping, a novel approach designed to address this challenge.
-            RAMEN employs an uncertainty-weighted multi-agent consensus optimization algorithm that accounts for communication disruptions. 
-            When communication is lost between a pair of agents, each agent retains only an outdated copy of its neighbor's map, with the uncertainty of this copy increasing over time since the last communication.
-            Using gradient update information, we quantify the uncertainty associated with each parameter of the neural network map. 
-            Neural network maps from different agents are brought to consensus on the basis of their levels of uncertainty, with consensus biased towards network parameters with lower uncertainty.
-            To achieve this, we derive a weighted variant of the decentralized consensus alternating direction method of multipliers (C-ADMM) algorithm, facilitating robust collaboration among agents with varying communication and update frequencies.
-            Through extensive evaluations on real-world datasets and robot hardware experiments, we demonstrate RAMEN's superior mapping performance under challenging communication conditions.             
+            Continual neural mapping must update a scene representation from sequential RGB-D observations without catastrophically overwriting geometry learned earlier. Replay-based approaches reduce forgetting by storing historical observations, but this increases memory usage and can be undesirable in long-horizon robot deployments. TACO addresses this setting with temporal consensus optimization: historical neural map snapshots are treated as temporal neighbors, and the current map is optimized against them using parameter-wise importance weights. The resulting objective preserves parameters that strongly influence previously observed geometry while leaving uncertain or newly changed regions free to adapt.
           </p>
         </div>
       </div>
@@ -165,35 +103,62 @@
 </section>
 <!-- End paper abstract -->
 
+<section class="section">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3 has-text-centered">Method Overview</h2>
+    <div class="columns">
+      <div class="column">
+        <div class="method-box">
+          <h3 class="title is-5">Temporal Snapshots</h3>
+          <p>TACO periodically stores compact snapshots of the neural implicit map instead of retaining old RGB-D frames.</p>
+        </div>
+      </div>
+      <div class="column">
+        <div class="method-box">
+          <h3 class="title is-5">Importance Weighting</h3>
+          <p>Parameter importance is estimated from output sensitivity, identifying which parts of the map should be protected.</p>
+        </div>
+      </div>
+      <div class="column">
+        <div class="method-box">
+          <h3 class="title is-5">Consensus Optimization</h3>
+          <p>The current map is optimized with a masked, importance-weighted temporal consensus term over past snapshots.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
-
-
-
-
-
-
-
-
-<!--BibTex citation -->
-  <!-- <section class="section" id="BibTeX">
+<section class="section hero is-light">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3 has-text-centered">Getting Started</h2>
+    <div class="content">
+      <p>
+        The official implementation supports Replica and ScanNet configurations. See the GitHub repository for installation, dataset preparation, training, visualization, and evaluation instructions.
+      </p>
+      <pre><code>python main.py --config configs/Replica/office1.yaml</code></pre>
+    </div>
+  </div>
+</section>
+<section class="section" id="BibTeX">
     <div class="container is-max-desktop content">
       <h2 class="title">BibTeX</h2>
-      <pre><code>BibTex Code Here</code></pre>
+      <pre><code>@inproceedings{Zhou2026RSS,
+  title={TACO: Temporal Consensus Optimization for Continual Neural Mapping},
+  author={Zhou, Xunlan and Zhao, Hongrui and Mehr, Negar},
+  booktitle={Robotics: Science and Systems (RSS)},
+  year={2026}
+}</code></pre>
     </div>
-</section> -->
-<!--End BibTex citation -->
-
-
-  <footer class="footer">
+</section>
+<footer class="footer">
   <div class="container">
     <div class="columns is-centered">
       <div class="column is-8">
         <div class="content">
 
           <p>
-            This page was built using the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a> which was adopted from the <a href="https://nerfies.github.io" target="_blank">Nerfies</a> project page.
-            <br> This website is licensed under a <a rel="license"  href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank">Creative
-            Commons Attribution-ShareAlike 4.0 International License</a>.
+            Website template adapted from the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a>.
           </p>
 
         </div>
@@ -202,11 +167,5 @@
   </div>
 </footer>
 
-<!-- Statcounter tracking code -->
-  
-<!-- You can add a tracker to track page visits by creating an account at statcounter.com -->
-
-    <!-- End of Statcounter Code -->
-
-  </body>
-  </html>
+</body>
+</html>

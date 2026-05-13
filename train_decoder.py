@@ -37,7 +37,7 @@ class DecoderTrainer:
         self.model = JointEncoding(cfg, self.bounding_box).to(self.device)
         
         if self.cfg['multi_agents']['track_uncertainty']:
-            voxel_size = self.cfg['NARUTO']['voxel_size']
+            voxel_size = self.cfg.get('uncertainty_grid', {}).get('voxel_size', 0.02)
             self.model.get_uncert_grid(voxel_size)
             print("Uncertainty grid initialized.")
 
@@ -139,7 +139,7 @@ class DecoderTrainer:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Offline training for the scene decoder with NARUTO modifications.')
+    parser = argparse.ArgumentParser(description='Offline training for the scene decoder.')
     parser.add_argument('--config', type=str, required=True, help='Path to config file for training the decoder.')
     args = parser.parse_args()
     cfg = config.load_config(args.config)
