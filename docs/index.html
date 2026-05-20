@@ -90,6 +90,10 @@
       animation: floatIn 700ms ease both;
     }
 
+    .section-figure {
+      margin-top: 2rem;
+    }
+
     .figure-card:nth-child(2) {
       animation-delay: 120ms;
     }
@@ -217,39 +221,40 @@
         </div>
       </div>
     </div>
-  </div>
-</section>
 
-<section class="section">
-  <div class="container is-max-desktop">
-    <div class="figure-card">
+    <div class="figure-card section-figure">
       <img src="static/images/taco_pipeline.png" alt="TACO temporal consensus pipeline">
       <div class="figure-caption">
         <div class="figure-kicker">Graphical Explanation</div>
-        <h2 class="title is-4">Temporal consensus across evolving neural maps</h2>
+        <h3 class="title is-4">Temporal consensus across evolving neural maps</h3>
         <p>TACO turns historical map states into temporal neighbors, preserving stable scene knowledge while allowing changed regions to update over time.</p>
       </div>
     </div>
-
   </div>
 </section>
 
 <section class="section">
   <div class="container is-max-desktop">
-    <div class="figure-card">
-      <img src="static/images/scannet_metrics_all.png" alt="Static Replica benchmark results">
+    <h2 class="title is-3 has-text-centered">Results on Static Scenes</h2>
+    <div class="figure-card section-figure">
+      <img src="static/images/scannet_metrics_all.png" alt="Static scene benchmark results">
       <div class="figure-caption">
-        <div class="figure-kicker">Static Replica Benchmark</div>
-        <h2 class="title is-4">Replay-free mapping remains competitive across reconstruction metrics</h2>
+        <div class="figure-kicker">Static Scene Benchmark</div>
+        <h3 class="title is-4">Replay-free mapping remains competitive across reconstruction metrics</h3>
         <p>Across artifacts, holes, Chamfer distance, completion ratio, precision, and F1, TACO balances plasticity and stability without storing past RGB-D frames.</p>
       </div>
     </div>
+  </div>
+</section>
 
-    <div class="figure-card">
+<section class="section hero is-light">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3 has-text-centered">Results on Dynamic Scenes</h2>
+    <div class="figure-card section-figure">
       <img src="static/images/dynamic_real_scene.png" alt="Dynamic real-world scene results">
       <div class="figure-caption">
         <div class="figure-kicker">Dynamic Real Scene</div>
-        <h2 class="title is-4">Adapting to scene changes without replay</h2>
+        <h3 class="title is-4">Adapting to scene changes without replay</h3>
         <p>TACO supports continual updates in dynamic real-world settings by protecting reliable map parameters and adapting uncertain regions as new observations arrive.</p>
       </div>
     </div>
