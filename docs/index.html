@@ -3,51 +3,136 @@
 <head>
   <meta charset="utf-8">
   <meta name="description" content="TACO: Temporal Consensus Optimization for Continual Neural Mapping">
-  <meta property="og:title" content="TACO: Temporal Consensus Optimization for Continual Neural Mapping"/>
-  <meta property="og:description" content="Replay-free continual neural mapping with temporal consensus optimization."/>
-  <meta property="og:url" content="https://labicon.github.io/TACO/"/>
+  <meta property="og:title" content="TACO: Temporal Consensus Optimization for Continual Neural Mapping">
+  <meta property="og:description" content="Replay-free continual neural mapping with temporal consensus optimization.">
+  <meta property="og:url" content="https://labicon.github.io/TACO/">
   <meta name="keywords" content="TACO, continual neural mapping, neural implicit mapping, temporal consensus, robotics, RSS 2026">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>TACO</title>
-  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
-  rel="stylesheet">
-
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
   <link rel="stylesheet" href="static/css/bulma.min.css">
-  <link rel="stylesheet" href="static/css/bulma-carousel.min.css">
-  <link rel="stylesheet" href="static/css/bulma-slider.min.css">
   <link rel="stylesheet" href="static/css/fontawesome.all.min.css">
-  <link rel="stylesheet"
-  href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
   <link rel="stylesheet" href="static/css/index.css">
-
   <script defer src="static/js/fontawesome.all.min.js"></script>
-  
+
   <style>
+    body {
+      background: #fbfbfd;
+    }
+
+    .hero {
+      background:
+        radial-gradient(circle at 18% 18%, rgba(78, 134, 255, 0.12), transparent 32%),
+        radial-gradient(circle at 82% 12%, rgba(33, 186, 129, 0.12), transparent 30%),
+        linear-gradient(180deg, #ffffff 0%, #f7f8fb 100%);
+    }
+
+    .rss-highlight {
+      background: linear-gradient(90deg, #2b7de9, #16a765, #fbbc04, #ea4335, #8e44ff);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: colorFlow 5s ease-in-out infinite alternate;
+      font-weight: 800;
+    }
+
+    @keyframes colorFlow {
+      from { background-position: 0% center; }
+      to { background-position: 100% center; }
+    }
+
     .tagline {
       max-width: 900px;
       margin: 1.5rem auto 0;
     }
 
+    .publication-links {
+      margin-top: 1.5rem;
+    }
+
+    .method-box,
+    .figure-card {
+      border: 1px solid rgba(20, 26, 38, 0.08);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 18px 45px rgba(24, 35, 66, 0.10);
+      transition: transform 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+    }
+
     .method-box {
-      border: 1px solid #dbdbdb;
-      border-radius: 8px;
       padding: 1.25rem;
       height: 100%;
-      background: #fff;
+    }
+
+    .method-box:hover,
+    .figure-card:hover {
+      transform: translateY(-6px) scale(1.012);
+      border-color: rgba(43, 125, 233, 0.28);
+      box-shadow: 0 30px 70px rgba(24, 35, 66, 0.18);
+    }
+
+    .figure-card {
+      overflow: hidden;
+      margin-bottom: 2rem;
+      animation: floatIn 700ms ease both;
+    }
+
+    .figure-card:nth-child(2) {
+      animation-delay: 120ms;
+    }
+
+    .figure-card:nth-child(3) {
+      animation-delay: 240ms;
+    }
+
+    .figure-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+      transform: scale(1.001);
+      transition: transform 420ms ease, filter 420ms ease;
+    }
+
+    .figure-card:hover img {
+      transform: scale(1.028);
+      filter: saturate(1.05) contrast(1.02);
+    }
+
+    .figure-caption {
+      padding: 1.25rem 1.5rem 1.5rem;
+    }
+
+    .figure-kicker {
+      color: #2b7de9;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      margin-bottom: 0.35rem;
+    }
+
+    @keyframes floatIn {
+      from {
+        opacity: 0;
+        transform: translateY(22px) scale(0.985);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
     }
   </style>
 </head>
 <body>
-
-
 <section class="hero">
   <div class="hero-body">
     <div class="container is-max-desktop">
       <div class="columns is-centered">
         <div class="column has-text-centered">
           <h1 class="title is-1 publication-title">TACO: Temporal Consensus Optimization for Continual Neural Mapping</h1>
-          <h2 class="subtitle is-4 publication-title">Robotics: Science and Systems (RSS) 2026</h2>
+          <h2 class="subtitle is-4 publication-title"><span class="rss-highlight">Robotics: Science and Systems (RSS) 2026</span></h2>
 
           <div class="is-size-5 publication-authors">
             <span class="author-block"><a href="https://www.wyaaaattwho.xyz/about">Xunlan Zhou</a><sup>*</sup>,</span>
@@ -82,11 +167,7 @@
     </div>
   </div>
 </section>
-            </div>
-          </div>
-        </div>
-      </div>
-<!-- Paper abstract -->
+
 <section class="section hero is-light">
   <div class="container is-max-desktop">
     <div class="columns is-centered has-text-centered">
@@ -101,9 +182,39 @@
     </div>
   </div>
 </section>
-<!-- End paper abstract -->
 
 <section class="section">
+  <div class="container is-max-desktop">
+    <div class="figure-card">
+      <img src="static/images/taco_pipeline.png" alt="TACO temporal consensus pipeline">
+      <div class="figure-caption">
+        <div class="figure-kicker">Graphical Explanation</div>
+        <h2 class="title is-4">Temporal consensus across evolving neural maps</h2>
+        <p>TACO turns historical map states into temporal neighbors, preserving stable scene knowledge while allowing changed regions to update over time.</p>
+      </div>
+    </div>
+
+    <div class="figure-card">
+      <img src="static/images/scannet_metrics_all.png" alt="Static Replica benchmark results">
+      <div class="figure-caption">
+        <div class="figure-kicker">Static Replica Benchmark</div>
+        <h2 class="title is-4">Replay-free mapping remains competitive across reconstruction metrics</h2>
+        <p>Across artifacts, holes, Chamfer distance, completion ratio, precision, and F1, TACO balances plasticity and stability without storing past RGB-D frames.</p>
+      </div>
+    </div>
+
+    <div class="figure-card">
+      <img src="static/images/dynamic_real_scene.png" alt="Dynamic real-world scene results">
+      <div class="figure-caption">
+        <div class="figure-kicker">Dynamic Real Scene</div>
+        <h2 class="title is-4">Adapting to scene changes without replay</h2>
+        <p>TACO supports continual updates in dynamic real-world settings by protecting reliable map parameters and adapting uncertain regions as new observations arrive.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section hero is-light">
   <div class="container is-max-desktop">
     <h2 class="title is-3 has-text-centered">Method Overview</h2>
     <div class="columns">
@@ -129,7 +240,7 @@
   </div>
 </section>
 
-<section class="section hero is-light">
+<section class="section">
   <div class="container is-max-desktop">
     <h2 class="title is-3 has-text-centered">Getting Started</h2>
     <div class="content">
@@ -140,32 +251,31 @@
     </div>
   </div>
 </section>
-<section class="section" id="BibTeX">
-    <div class="container is-max-desktop content">
-      <h2 class="title">BibTeX</h2>
-      <pre><code>@inproceedings{Zhou2026RSS,
+
+<section class="section hero is-light" id="BibTeX">
+  <div class="container is-max-desktop content">
+    <h2 class="title">BibTeX</h2>
+    <pre><code>@inproceedings{Zhou2026RSS,
   title={TACO: Temporal Consensus Optimization for Continual Neural Mapping},
   author={Zhou, Xunlan and Zhao, Hongrui and Mehr, Negar},
   booktitle={Robotics: Science and Systems (RSS)},
   year={2026}
 }</code></pre>
-    </div>
+  </div>
 </section>
+
 <footer class="footer">
   <div class="container">
     <div class="columns is-centered">
       <div class="column is-8">
-        <div class="content">
-
+        <div class="content has-text-centered">
           <p>
             Website template adapted from the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a>.
           </p>
-
         </div>
       </div>
     </div>
   </div>
 </footer>
-
 </body>
 </html>
