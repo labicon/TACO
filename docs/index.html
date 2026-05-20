@@ -39,9 +39,14 @@
     }
 
     .publication-venue {
-      margin-top: 1.1rem !important;
-      margin-bottom: 1.15rem !important;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 1.25rem 0 1.25rem;
       line-height: 1.35;
+      text-align: center;
+      font-size: 1.5rem;
     }
 
     @keyframes colorFlow {
@@ -138,7 +143,7 @@
       <div class="columns is-centered">
         <div class="column has-text-centered">
           <h1 class="title is-1 publication-title">TACO: Temporal Consensus Optimization for Continual Neural Mapping</h1>
-          <h2 class="subtitle is-4 publication-title publication-venue"><span class="rss-highlight">Robotics: Science and Systems (RSS) 2026</span></h2>
+          <div class="publication-venue"><span class="rss-highlight">Robotics: Science and Systems (RSS) 2026</span></div>
 
           <div class="is-size-5 publication-authors">
             <span class="author-block"><a href="https://www.wyaaaattwho.xyz/about">Xunlan Zhou</a><sup>*</sup>,</span>
@@ -189,37 +194,6 @@
   </div>
 </section>
 
-<section class="section">
-  <div class="container is-max-desktop">
-    <div class="figure-card">
-      <img src="static/images/taco_pipeline.png" alt="TACO temporal consensus pipeline">
-      <div class="figure-caption">
-        <div class="figure-kicker">Graphical Explanation</div>
-        <h2 class="title is-4">Temporal consensus across evolving neural maps</h2>
-        <p>TACO turns historical map states into temporal neighbors, preserving stable scene knowledge while allowing changed regions to update over time.</p>
-      </div>
-    </div>
-
-    <div class="figure-card">
-      <img src="static/images/scannet_metrics_all.png" alt="Static Replica benchmark results">
-      <div class="figure-caption">
-        <div class="figure-kicker">Static Replica Benchmark</div>
-        <h2 class="title is-4">Replay-free mapping remains competitive across reconstruction metrics</h2>
-        <p>Across artifacts, holes, Chamfer distance, completion ratio, precision, and F1, TACO balances plasticity and stability without storing past RGB-D frames.</p>
-      </div>
-    </div>
-
-    <div class="figure-card">
-      <img src="static/images/dynamic_real_scene.png" alt="Dynamic real-world scene results">
-      <div class="figure-caption">
-        <div class="figure-kicker">Dynamic Real Scene</div>
-        <h2 class="title is-4">Adapting to scene changes without replay</h2>
-        <p>TACO supports continual updates in dynamic real-world settings by protecting reliable map parameters and adapting uncertain regions as new observations arrive.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
 <section class="section hero is-light">
   <div class="container is-max-desktop">
     <h2 class="title is-3 has-text-centered">Method Overview</h2>
@@ -245,6 +219,44 @@
     </div>
   </div>
 </section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <div class="figure-card">
+      <img src="static/images/taco_pipeline.png" alt="TACO temporal consensus pipeline">
+      <div class="figure-caption">
+        <div class="figure-kicker">Graphical Explanation</div>
+        <h2 class="title is-4">Temporal consensus across evolving neural maps</h2>
+        <p>TACO turns historical map states into temporal neighbors, preserving stable scene knowledge while allowing changed regions to update over time.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <div class="figure-card">
+      <img src="static/images/scannet_metrics_all.png" alt="Static Replica benchmark results">
+      <div class="figure-caption">
+        <div class="figure-kicker">Static Replica Benchmark</div>
+        <h2 class="title is-4">Replay-free mapping remains competitive across reconstruction metrics</h2>
+        <p>Across artifacts, holes, Chamfer distance, completion ratio, precision, and F1, TACO balances plasticity and stability without storing past RGB-D frames.</p>
+      </div>
+    </div>
+
+    <div class="figure-card">
+      <img src="static/images/dynamic_real_scene.png" alt="Dynamic real-world scene results">
+      <div class="figure-caption">
+        <div class="figure-kicker">Dynamic Real Scene</div>
+        <h2 class="title is-4">Adapting to scene changes without replay</h2>
+        <p>TACO supports continual updates in dynamic real-world settings by protecting reliable map parameters and adapting uncertain regions as new observations arrive.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
 
 <section class="section">
   <div class="container is-max-desktop">
