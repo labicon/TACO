@@ -10,6 +10,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>TACO</title>
+  <link rel="icon" href="static/images/favicon.ico" type="image/x-icon">
+  <link rel="shortcut icon" href="static/images/favicon.ico" type="image/x-icon">
   <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
   <link rel="stylesheet" href="static/css/bulma.min.css">
   <link rel="stylesheet" href="static/css/fontawesome.all.min.css">
@@ -52,6 +54,13 @@
     @keyframes colorFlow {
       from { background-position: 0% center; }
       to { background-position: 100% center; }
+    }
+
+    .title-emoji {
+      display: inline-block;
+      margin-right: 0.35em;
+      transform: translateY(-0.04em);
+      filter: drop-shadow(0 10px 18px rgba(139, 77, 32, 0.18));
     }
 
     .tagline {
@@ -146,7 +155,7 @@
     <div class="container is-max-desktop">
       <div class="columns is-centered">
         <div class="column has-text-centered">
-          <h1 class="title is-1 publication-title">TACO: Temporal Consensus Optimization for Continual Neural Mapping</h1>
+          <h1 class="title is-1 publication-title"><span class="title-emoji" aria-hidden="true">🌮</span>TACO: Temporal Consensus Optimization for Continual Neural Mapping</h1>
           <div class="publication-venue"><span class="rss-highlight">Robotics: Science and Systems (RSS) 2026</span></div>
 
           <div class="is-size-5 publication-authors">
