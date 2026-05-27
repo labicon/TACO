@@ -188,6 +188,39 @@
       padding: 1.25rem 1.5rem 1.5rem;
     }
 
+    .poster-card {
+      margin-top: 2rem;
+      overflow: hidden;
+      border: 1px solid rgba(20, 26, 38, 0.08);
+      border-radius: 14px;
+      background: #ffffff;
+      box-shadow: 0 18px 45px rgba(24, 35, 66, 0.10);
+    }
+
+    .poster-frame {
+      display: block;
+      width: 100%;
+      height: min(82vh, 920px);
+      min-height: 620px;
+      border: 0;
+      background: #ffffff;
+    }
+
+    .poster-actions {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 640px) {
+      .poster-frame {
+        height: 72vh;
+        min-height: 480px;
+      }
+    }
+
     .figure-kicker {
       color: #2b7de9;
       font-weight: 700;
@@ -352,7 +385,20 @@
   </div>
 </section>
 
-
+<section class="section">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3 has-text-centered">RSS Poster</h2>
+    <div class="poster-card">
+      <iframe class="poster-frame" src="static/pdfs/taco_rss_poster.pdf#view=FitH" title="TACO RSS 2026 poster"></iframe>
+    </div>
+    <div class="poster-actions">
+      <a href="static/pdfs/taco_rss_poster.pdf" target="_blank" rel="noopener" class="external-link button is-normal is-rounded is-dark">
+        <span class="icon"><i class="fas fa-file-pdf"></i></span>
+        <span>Open Poster</span>
+      </a>
+    </div>
+  </div>
+</section>
 
 <section class="section hero is-light" id="BibTeX">
   <div class="container is-max-desktop content">
